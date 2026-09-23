@@ -1,0 +1,28 @@
+# Secrets
+.env
+*.pem
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+celerybeat-schedule*
+
+# Node
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Eval outputs are committed deliberately (results/), scratch runs are not
+evals/results/tmp/

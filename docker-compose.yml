@@ -1,0 +1,89 @@
+# Local development stack: `docker compose up --build`
+#   api     http://localhost:8000/api/v1/health   (docs at /docs)
+#   flower  http://localhost:5555
+# Secrets come from backend/.env (optional in Phase 0); the service URLs below
+# override the localhost values in that file so containers reach each other.
+
+x-backend: &backend
+  build: ./backend
+  env_file:
+    - path: ./backend/.env
+      required: false
+  environment:
+    DATABASE_URL: postgresql+asyncpg://reviewpilot:reviewpilot@postgres:5432/reviewpilot
+    REDIS_URL: redis://redis:6379/0
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: reviewpilot
+      POSTGRES_PASSWORD: reviewpilot
+      POSTGRES_DB: reviewpilot
+    ports:
+      # Host port 5433 so it doesn't clash with a locally installed PostgreSQL on 5432.
+      # Containers still reach it as postgres:5432 on the compose network.
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reviewpilot -d reviewpilot"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    <<: *backend
+    # Apply migrations, then serve with auto-reload on source changes.
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  worker:
+    <<: *backend
+    command: celery -A app.workers.celery_app:celery_app worker -Q reviews,default,feedback --concurrency=2 --loglevel=INFO
+    volumes:
+      - ./backend/app:/app/app
+
+  # Exactly ONE beat instance, ever; two would run every scheduled job twice.
+  beat:
+    <<: *backend
+    command: celery -A app.workers.celery_app:celery_app beat --loglevel=INFO --schedule=/tmp/celerybeat-schedule
+
+  flower:
+    # Official Flower image: it only needs the broker URL, so it doesn't need our code.
+    image: mher/flower:2.0
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+    ports:
+      - "5555:5555"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
