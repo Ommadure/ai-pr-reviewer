@@ -97,6 +97,28 @@ Fill in the GitHub values above, plus `GEMINI_API_KEY` from <https://aistudio.go
 
 **Never commit `backend/.env`.** It's gitignored.
 
+## 7. Check the setup
+
+```bash
+cd backend && uv run python -m app.github.check_setup
+```
+
+This logs in to GitHub **as your App** and verifies:
+- the key works;
+- `GITHUB_APP_SLUG` matches the App (needed so ReviewPilot ignores its own comments);
+- the permissions and events are right;
+- the App is installed on a repository.
+
+It never prints secrets. Fix anything marked ✗, then:
+
+```bash
+cd .. && docker compose up --build                    # terminal 1
+npx smee-client --url <your smee URL> \
+  --target http://localhost:8000/api/v1/webhooks/github   # terminal 2
+```
+
+Open a pull request on your test repository. Within a few seconds you should see a **ReviewPilot** check and a 👋 comment on the first added line. The api logs show `webhook.handled status=queued`, and the worker logs show `review.hello_posted`.
+
 ## Production later (Phase 7)
 
 When the backend is deployed:
