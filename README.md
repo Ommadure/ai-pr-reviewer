@@ -2,7 +2,7 @@
 
 A GitHub App that reviews pull requests with an LLM. It posts validated inline comments on the exact changed lines, and a React dashboard tracks review history, cost, and how useful the comments are.
 
-> 🚧 In progress: **Phase 1 (webhook → hello review loop)**. The full README (demo, eval results, metrics) comes in Phase 7.
+> 🚧 In progress: **Phase 1** (webhook → hello review loop, awaiting the real-PR check) and **Phase 2** (review engine). The full README (demo, eval results, metrics) comes in Phase 7.
 
 ## Local setup
 
@@ -20,6 +20,17 @@ Backend checks, run from `backend/`:
 uv sync && uv run ruff check . && uv run mypy app tests && uv run pytest   # needs `docker compose up -d postgres`
 ```
 
+## Review a diff from the terminal
+
+The review engine runs without GitHub or a database:
+
+```bash
+cd backend
+git -C .. diff main > /tmp/change.patch
+uv run python -m app.review.cli /tmp/change.patch                    # uses LLM_* from backend/.env
+uv run python -m app.review.cli /tmp/change.patch --provider fake    # offline, no API key
+```
+
 ## Docs
 - [GitHub App setup](docs/github-app-setup.md)
 - [Architecture](docs/architecture.md)
@@ -30,3 +41,5 @@ uv sync && uv run ruff check . && uv run mypy app tests && uv run pytest   # nee
   - [0004 `asyncio.run` inside Celery](docs/adr/0004-asyncio-run-inside-celery.md)
   - [0005 GitHub App over OAuth App](docs/adr/0005-github-app-over-oauth-app.md)
   - [0006 Comment-only reviews](docs/adr/0006-comment-only-reviews.md)
+  - [0007 Pure review engine](docs/adr/0007-pure-review-engine.md)
+  - [0008 Comment fingerprints](docs/adr/0008-comment-fingerprints.md)

@@ -16,8 +16,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 AppEnv = Literal["development", "test", "production"]
 LLMProviderName = Literal["gemini", "anthropic", "openai", "openai_compatible", "fake"]
 
-# Settings that must be non-empty outside of tests. Later phases extend this
-# (LLM key in Phase 2, session secrets in Phase 5).
+# Settings the *server* (api/worker/beat) needs outside of tests. Later phases
+# extend this (LLM key in Phase 3, session secrets in Phase 5).
 REQUIRED_OUTSIDE_TESTS: tuple[str, ...] = (
     "database_url",
     "redis_url",
@@ -27,7 +27,13 @@ REQUIRED_OUTSIDE_TESTS: tuple[str, ...] = (
 )
 
 
-class Settings(BaseSettings):
+class ReviewSettings(BaseSettings):
+    """What the review engine needs: LLM choice, keys, budgets, prices.
+
+    Split out so the CLI and eval harness can run a review from a laptop with
+    only an LLM key, no GitHub App or database required.
+    """
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -35,6 +41,26 @@ class Settings(BaseSettings):
         env_ignore_empty=True,
         extra="ignore",
     )
+
+    llm_provider: LLMProviderName = "gemini"
+    llm_model: str = ""
+    llm_summary_model: str = ""
+    gemini_api_key: SecretStr = SecretStr("")
+    anthropic_api_key: SecretStr = SecretStr("")
+    openai_api_key: SecretStr = SecretStr("")
+    # {"model-name": [usd_per_1m_input_tokens, usd_per_1m_output_tokens]}, from
+    # the provider's pricing page. JSON in the env var: LLM_PRICING='{"m": [0.1, 0.4]}'.
+    llm_pricing: dict[str, tuple[float, float]] = {}
+    usd_to_inr: float | None = None
+
+    review_max_files: int = 50
+    review_max_input_tokens: int = 60_000
+    review_max_chunk_tokens: int = 12_000
+    review_max_concurrent_llm_calls: int = 2
+
+
+class Settings(ReviewSettings):
+    """Everything the server processes (api, worker, beat) need."""
 
     app_env: AppEnv = "development"
     app_base_url: str = "http://localhost:8000"
@@ -51,19 +77,6 @@ class Settings(BaseSettings):
 
     session_secret: SecretStr = SecretStr("")
     encryption_key: SecretStr = SecretStr("")
-
-    llm_provider: LLMProviderName = "gemini"
-    llm_model: str = ""
-    llm_summary_model: str = ""
-    gemini_api_key: SecretStr = SecretStr("")
-    anthropic_api_key: SecretStr = SecretStr("")
-    openai_api_key: SecretStr = SecretStr("")
-    usd_to_inr: float | None = None
-
-    review_max_files: int = 50
-    review_max_input_tokens: int = 60_000
-    review_max_chunk_tokens: int = 12_000
-    review_max_concurrent_llm_calls: int = 2
 
     sentry_dsn: str = ""
 
