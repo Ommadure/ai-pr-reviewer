@@ -153,4 +153,6 @@ def _error_message(response: httpx.Response) -> str:
 
 
 def _backoff(attempt: int) -> float:
-    return 1.0 * 2.0**attempt + random.uniform(0, 1)  # noqa: S311 (not crypto)
+    # ~2s, 4s, 8s (+ jitter): Gemini's "high demand" 503s usually clear within seconds,
+    # but not within the first one.
+    return 2.0 * 2.0**attempt + random.uniform(0, 1)  # noqa: S311 (not crypto)

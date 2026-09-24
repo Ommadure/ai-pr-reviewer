@@ -65,7 +65,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         print(json.dumps(dataclasses.asdict(result) | _totals(result), indent=2, default=str))
     else:
-        _print_report(result, settings.usd_to_inr)
+        _print_report(
+            result, settings.usd_to_inr, priced=price_table(settings).is_priced(result.model)
+        )
     return 0
 
 
@@ -115,7 +117,7 @@ def _totals(result: ReviewResult) -> dict[str, object]:
     }
 
 
-def _print_report(result: ReviewResult, inr_rate: float | None) -> None:
+def _print_report(result: ReviewResult, inr_rate: float | None, *, priced: bool) -> None:
     out: list[str] = []
     if result.summary:
         out += [f"Summary (risk: {result.summary.risk_level})", f"  {result.summary.overview}"]
@@ -149,6 +151,8 @@ def _print_report(result: ReviewResult, inr_rate: float | None) -> None:
 
     inr = usd_to_inr(result.cost_usd, inr_rate)
     cost = f"${result.cost_usd:.5f}" + (f" (₹{inr:.3f})" if inr is not None else "")
+    if not priced:
+        cost = f"cost unknown (no LLM_PRICING entry for {result.model})"
     latency = sum(call.latency_ms for call in result.llm_calls)
     out.append(
         f"\n{result.files_reviewed}/{result.files_total} files reviewed · "

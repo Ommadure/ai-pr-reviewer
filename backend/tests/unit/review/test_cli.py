@@ -21,6 +21,7 @@ def test_cli_reviews_a_patch_offline(capsys: pytest.CaptureFixture[str]) -> None
     assert "0 comment(s)" in out
     assert "2/6 files reviewed" in out
     assert "web/package-lock.json  (ignored_path)" in out
+    assert "cost unknown (no LLM_PRICING entry for fake-model)" in out
 
 
 def test_cli_json_output(capsys: pytest.CaptureFixture[str]) -> None:
