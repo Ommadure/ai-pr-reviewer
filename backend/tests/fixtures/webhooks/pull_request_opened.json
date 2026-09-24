@@ -1,0 +1,25 @@
+{
+  "action": "opened",
+  "number": 1,
+  "pull_request": {
+    "id": 2001,
+    "number": 1,
+    "title": "Add user lookup endpoint",
+    "state": "open",
+    "draft": false,
+    "merged": false,
+    "user": {"login": "octocat", "type": "User"},
+    "head": {"ref": "feature/user-lookup", "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+    "base": {"ref": "main", "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+  },
+  "repository": {
+    "id": 3001,
+    "name": "playground",
+    "full_name": "octocat/playground",
+    "private": false,
+    "default_branch": "main",
+    "owner": {"login": "octocat", "type": "User"}
+  },
+  "installation": {"id": 4001, "node_id": "MDIzOkludGVncmF0aW9uSW5zdGFsbGF0aW9uNDAwMQ=="},
+  "sender": {"login": "octocat", "type": "User"}
+}

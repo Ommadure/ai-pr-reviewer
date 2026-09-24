@@ -19,7 +19,7 @@ GitHub can't reach `localhost`, so smee gives you a public URL and relays every 
    ```bash
    npx smee-client --url https://smee.io/AbC123xyz --target http://localhost:8000/api/v1/webhooks/github
    ```
-   The `/webhooks/github` endpoint is built in Phase 1. Until then smee will show 404s, which is expected.
+   Every event GitHub sends then shows up in the smee page *and* in the api logs.
 
 ## 2. Generate a webhook secret
 
@@ -75,7 +75,7 @@ Click **Create GitHub App**.
 On the App's **General** page:
 
 1. Copy the **App ID** into `GITHUB_APP_ID`.
-2. Copy the **Client ID** into `GITHUB_APP_CLIENT_ID`.
+2. Copy the **Client ID** (starts with `Iv`) into `GITHUB_APP_CLIENT_ID`. ReviewPilot uses it as the issuer of its App JWT; GitHub recommends it over the App ID (either one works).
 3. Click **Generate a new client secret** and copy it into `GITHUB_APP_CLIENT_SECRET`. GitHub shows it only once.
 4. Scroll to **Private keys**, click **Generate a private key**, and a `.pem` file downloads. Base64-encode it onto one line so it fits in an env var:
    ```bash
@@ -96,6 +96,28 @@ cp backend/.env.example backend/.env
 Fill in the GitHub values above, plus `GEMINI_API_KEY` from <https://aistudio.google.com/apikey>.
 
 **Never commit `backend/.env`.** It's gitignored.
+
+## 7. Check the setup
+
+```bash
+cd backend && uv run python -m app.github.check_setup
+```
+
+This logs in to GitHub **as your App** and verifies:
+- the key works;
+- `GITHUB_APP_SLUG` matches the App (needed so ReviewPilot ignores its own comments);
+- the permissions and events are right;
+- the App is installed on a repository.
+
+It never prints secrets. Fix anything marked ✗, then:
+
+```bash
+cd .. && docker compose up --build                    # terminal 1
+npx smee-client --url <your smee URL> \
+  --target http://localhost:8000/api/v1/webhooks/github   # terminal 2
+```
+
+Open a pull request on your test repository. Within a few seconds you should see a **ReviewPilot** check and a 👋 comment on the first added line. The api logs show `webhook.handled status=queued`, and the worker logs show `review.hello_posted`.
 
 ## Production later (Phase 7)
 

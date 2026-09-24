@@ -19,6 +19,23 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    services:
+      # Integration tests run against real Postgres (upserts, ON CONFLICT, migrations).
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: reviewpilot
+          POSTGRES_PASSWORD: reviewpilot
+          POSTGRES_DB: reviewpilot
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U reviewpilot"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://reviewpilot:reviewpilot@localhost:5432/reviewpilot_test
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -32,7 +49,7 @@ jobs:
       - name: Type check
         run: uv run mypy app tests
       - name: Test
-        # No GitHub or LLM calls: tests use fakes, and APP_ENV=test is set in conftest.
+        # No GitHub or LLM calls: GitHub is mocked with respx, APP_ENV=test is set in conftest.
         run: uv run pytest
 
   frontend:

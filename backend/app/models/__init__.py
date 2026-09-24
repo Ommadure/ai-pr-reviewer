@@ -1,0 +1,8 @@
+"""Importing this package registers every model on Base.metadata (Alembic relies on it)."""
+
+from app.models.installation import Installation
+from app.models.pull_request import PullRequest
+from app.models.repository import Repository
+from app.models.webhook_delivery import WebhookDelivery
+
+__all__ = ["Installation", "PullRequest", "Repository", "WebhookDelivery"]

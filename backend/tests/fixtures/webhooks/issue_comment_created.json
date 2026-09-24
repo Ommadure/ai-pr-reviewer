@@ -1,0 +1,15 @@
+{
+  "action": "created",
+  "issue": {"number": 1, "pull_request": {"url": "https://api.github.com/repos/octocat/playground/pulls/1"}},
+  "comment": {"id": 5001, "body": "/reviewpilot review", "user": {"login": "octocat", "type": "User"}},
+  "repository": {
+    "id": 3001,
+    "name": "playground",
+    "full_name": "octocat/playground",
+    "private": false,
+    "default_branch": "main",
+    "owner": {"login": "octocat", "type": "User"}
+  },
+  "installation": {"id": 4001},
+  "sender": {"login": "octocat", "type": "User"}
+}

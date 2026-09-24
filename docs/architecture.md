@@ -23,11 +23,40 @@ flowchart LR
 5. **All PR content is untrusted data.**
 6. **Config is read from the default branch only.**
 
-## Components (Phase 0 status)
+## Webhook → review flow (Phase 1)
+
+```mermaid
+sequenceDiagram
+    participant GH as GitHub
+    participant API as FastAPI /webhooks/github
+    participant DB as Postgres
+    participant Q as Redis (broker)
+    participant W as Celery worker
+    GH->>API: POST event (X-Hub-Signature-256, X-GitHub-Delivery)
+    API->>API: verify HMAC over raw body (401 if bad)
+    API->>DB: INSERT delivery ON CONFLICT (dedupe)
+    API->>DB: route event: upsert installation / repo / PR
+    API->>DB: COMMIT
+    API->>Q: enqueue review_pull_request(pr_id, head_sha)
+    API-->>GH: 202 Accepted (milliseconds)
+    Q->>W: deliver task
+    W->>DB: load PR; stale head? → superseded
+    W->>GH: App JWT → installation token (cached in Redis)
+    W->>GH: create check run (in_progress)
+    W->>GH: list PR files → post review (event COMMENT)
+    W->>GH: complete check run (success / neutral)
+```
+
+## Components
 | Component | Where | Status |
 |---|---|---|
-| API (health, readiness) | `backend/app/main.py`, `app/api/v1/routes/health.py` | ✅ |
-| Settings (fail-fast) | `backend/app/core/config.py` | ✅ |
-| Celery app + reliability config | `backend/app/workers/celery_app.py` | ✅ |
-| Migrations | `backend/alembic/` | initialised, no tables yet |
+| API (health, readiness) | `backend/app/main.py`, `app/api/v1/routes/health.py` | ✅ Phase 0 |
+| Settings (fail-fast) | `backend/app/core/config.py` | ✅ Phase 0 |
+| Celery app + reliability config | `backend/app/workers/celery_app.py` | ✅ Phase 0 |
+| Webhook endpoint (verify, dedupe, route) | `app/api/v1/routes/webhooks.py`, `app/services/webhook_router.py` | ✅ Phase 1 |
+| GitHub App auth + token cache | `app/github/app_auth.py` | ✅ Phase 1 |
+| GitHub REST client (retries, rate limits, pagination) | `app/github/client.py` | ✅ Phase 1 |
+| Tables: installations, repositories, pull_requests, webhook_deliveries | `app/models/`, `alembic/versions/` | ✅ Phase 1 |
+| Review pipeline | `app/services/orchestrator.py` | 🚧 hello-loop only |
+| Review engine | `app/review/` | Phase 2 |
 | Dashboard | `frontend/` | placeholder page |

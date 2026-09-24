@@ -5,6 +5,8 @@ Secrets are typed as SecretStr so they are masked if a Settings object is ever
 printed or logged.
 """
 
+import base64
+import binascii
 from functools import lru_cache
 from typing import Literal, Self
 
@@ -15,8 +17,14 @@ AppEnv = Literal["development", "test", "production"]
 LLMProviderName = Literal["gemini", "anthropic", "openai", "openai_compatible", "fake"]
 
 # Settings that must be non-empty outside of tests. Later phases extend this
-# (GitHub App credentials in Phase 1, LLM key in Phase 2, session secrets in Phase 5).
-REQUIRED_OUTSIDE_TESTS: tuple[str, ...] = ("database_url", "redis_url")
+# (LLM key in Phase 2, session secrets in Phase 5).
+REQUIRED_OUTSIDE_TESTS: tuple[str, ...] = (
+    "database_url",
+    "redis_url",
+    "github_app_private_key_b64",
+    # An empty webhook secret would make every forged webhook "valid".
+    "github_webhook_secret",
+)
 
 
 class Settings(BaseSettings):
@@ -63,15 +71,45 @@ class Settings(BaseSettings):
     def _fail_fast_on_missing_values(self) -> Self:
         if self.app_env == "test":
             return self
-        missing = [name.upper() for name in REQUIRED_OUTSIDE_TESTS if not getattr(self, name)]
+        missing = [
+            name.upper() for name in REQUIRED_OUTSIDE_TESTS if not _is_set(getattr(self, name))
+        ]
+        if not (self.github_app_client_id or self.github_app_id):
+            missing.append("GITHUB_APP_CLIENT_ID (or GITHUB_APP_ID)")
         if missing:
             raise ValueError(f"Missing required settings: {', '.join(missing)}")
+        if self.github_app_private_key_b64.get_secret_value():
+            # Decode now so a bad key fails at startup, not on the first webhook.
+            _ = self.github_app_private_key_pem
         return self
 
     @property
     def bot_login(self) -> str:
         """The login GitHub gives our App's bot user, used to ignore our own events."""
         return f"{self.github_app_slug}[bot]"
+
+    @property
+    def github_app_jwt_issuer(self) -> str:
+        """GitHub recommends the Client ID; the numeric App ID also works."""
+        return self.github_app_client_id or self.github_app_id
+
+    @property
+    def github_app_private_key_pem(self) -> str:
+        """The App's RSA private key, decoded from the one-line base64 env value."""
+        try:
+            pem = base64.b64decode(self.github_app_private_key_b64.get_secret_value()).decode()
+        except (binascii.Error, UnicodeDecodeError) as exc:
+            raise ValueError("GITHUB_APP_PRIVATE_KEY_B64 is not valid base64") from exc
+        if "PRIVATE KEY-----" not in pem:
+            raise ValueError("GITHUB_APP_PRIVATE_KEY_B64 does not decode to a PEM private key")
+        return pem
+
+
+def _is_set(value: object) -> bool:
+    # SecretStr is always truthy, even when empty, so unwrap it before checking.
+    if isinstance(value, SecretStr):
+        return bool(value.get_secret_value())
+    return bool(value)
 
 
 @lru_cache
