@@ -3,7 +3,7 @@ import base64
 import pytest
 from pydantic import ValidationError
 
-from app.core.config import Settings
+from app.core.config import ReviewSettings, Settings
 
 
 def test_test_env_does_not_require_values(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -76,3 +76,13 @@ def test_either_client_id_or_app_id_identifies_the_app() -> None:
     Settings(**_complete_dev_settings(github_app_client_id="", github_app_id="123"))  # type: ignore[arg-type]
     with pytest.raises(ValidationError, match="GITHUB_APP_CLIENT_ID"):
         Settings(**_complete_dev_settings(github_app_client_id="", github_app_id=""))  # type: ignore[arg-type]
+
+
+def test_llm_pricing_is_parsed_from_json_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_PRICING", '{"model-a": [0.1, 0.4]}')
+    assert ReviewSettings(_env_file=None).llm_pricing == {"model-a": (0.1, 0.4)}
+
+
+def test_review_settings_need_no_server_credentials() -> None:
+    # The CLI/evals run with only an LLM key: no GitHub App, database or Redis.
+    ReviewSettings(_env_file=None)

@@ -47,6 +47,24 @@ sequenceDiagram
     W->>GH: complete check run (success / neutral)
 ```
 
+## Review engine (Phase 2)
+
+```mermaid
+flowchart LR
+    D[FileDiffs] --> F[filters<br/>lockfiles, binaries,<br/>generated, ignore_paths]
+    F --> R[redaction<br/>secrets → REDACTED]
+    R -- secrets on + lines --> S[secret comments]
+    R --> P[prioritizer<br/>risky paths first]
+    P --> C[chunker<br/>token budgets]
+    C --> L[LLM per chunk<br/>JSON + 1 repair]
+    L --> V[validator<br/>real lines only]
+    S --> X[dedupe · rank · cap<br/>fingerprints]
+    V --> X
+    L -- file summaries --> M[LLM summary]
+    X --> O[ReviewResult]
+    M --> O
+```
+
 ## Components
 | Component | Where | Status |
 |---|---|---|
@@ -58,5 +76,7 @@ sequenceDiagram
 | GitHub REST client (retries, rate limits, pagination) | `app/github/client.py` | ✅ Phase 1 |
 | Tables: installations, repositories, pull_requests, webhook_deliveries | `app/models/`, `alembic/versions/` | ✅ Phase 1 |
 | Review pipeline | `app/services/orchestrator.py` | 🚧 hello-loop only |
-| Review engine | `app/review/` | Phase 2 |
+| Review engine (parse, filter, redact, prioritise, chunk, LLM, validate, dedupe, summarise) | `app/review/`, `app/config/repo_config.py` | ✅ Phase 2 |
+| Gemini provider + fake provider | `app/review/llm/` | ✅ Phase 2 |
+| CLI | `python -m app.review.cli change.patch` | ✅ Phase 2 |
 | Dashboard | `frontend/` | placeholder page |
