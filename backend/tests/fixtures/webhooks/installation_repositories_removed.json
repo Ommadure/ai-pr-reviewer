@@ -1,0 +1,10 @@
+{
+  "action": "removed",
+  "installation": {"id": 4001, "account": {"login": "octocat", "type": "User"}},
+  "repository_selection": "selected",
+  "repositories_added": [],
+  "repositories_removed": [
+    {"id": 3002, "name": "secret-sauce", "full_name": "octocat/secret-sauce", "private": true}
+  ],
+  "sender": {"login": "octocat", "type": "User"}
+}

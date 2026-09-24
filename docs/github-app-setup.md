@@ -19,7 +19,7 @@ GitHub can't reach `localhost`, so smee gives you a public URL and relays every 
    ```bash
    npx smee-client --url https://smee.io/AbC123xyz --target http://localhost:8000/api/v1/webhooks/github
    ```
-   The `/webhooks/github` endpoint is built in Phase 1. Until then smee will show 404s, which is expected.
+   Every event GitHub sends then shows up in the smee page *and* in the api logs.
 
 ## 2. Generate a webhook secret
 
@@ -75,7 +75,7 @@ Click **Create GitHub App**.
 On the App's **General** page:
 
 1. Copy the **App ID** into `GITHUB_APP_ID`.
-2. Copy the **Client ID** into `GITHUB_APP_CLIENT_ID`.
+2. Copy the **Client ID** (starts with `Iv`) into `GITHUB_APP_CLIENT_ID`. ReviewPilot uses it as the issuer of its App JWT; GitHub recommends it over the App ID (either one works).
 3. Click **Generate a new client secret** and copy it into `GITHUB_APP_CLIENT_SECRET`. GitHub shows it only once.
 4. Scroll to **Private keys**, click **Generate a private key**, and a `.pem` file downloads. Base64-encode it onto one line so it fits in an env var:
    ```bash

@@ -1,0 +1,14 @@
+{
+  "action": "created",
+  "installation": {
+    "id": 4001,
+    "account": {"login": "octocat", "type": "User"},
+    "repository_selection": "selected",
+    "app_slug": "reviewpilot-test"
+  },
+  "repositories": [
+    {"id": 3001, "name": "playground", "full_name": "octocat/playground", "private": false},
+    {"id": 3002, "name": "secret-sauce", "full_name": "octocat/secret-sauce", "private": true}
+  ],
+  "sender": {"login": "octocat", "type": "User"}
+}
