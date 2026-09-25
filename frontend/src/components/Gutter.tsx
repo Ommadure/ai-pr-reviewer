@@ -1,19 +1,21 @@
-import type { ReactNode } from "react";
+import { motion } from "motion/react";
+import { Children, type ReactNode } from "react";
 import { Link } from "react-router";
+import { row } from "../lib/motion";
 
 type Marker = "add" | "del" | "accent" | "none";
 
-const MARKER: Record<Marker, string> = {
-  add: "bg-add-ink",
-  del: "bg-del-ink",
-  accent: "bg-accent",
-  none: "bg-transparent",
+const BAND: Record<Marker, string> = {
+  add: "bg-green",
+  del: "bg-red",
+  accent: "bg-cyan",
+  none: "bg-line-strong",
 };
 
 /**
- * The signature element: a row laid out like a diff line. The mono gutter on the
- * left carries a real index (PR number, line number, commit), and the thin marker
- * says what kind of row it is, the way + / − do in a diff.
+ * A flight strip, as air-traffic controllers use to track each aircraft: a coloured
+ * band for its state, a boxed callsign (PR number, commit, open count), then the
+ * details. On hover the strip lifts toward you and its band lights up.
  */
 export function GutterRow({
   gutter,
@@ -30,18 +32,17 @@ export function GutterRow({
 }) {
   const body = (
     <>
-      <span aria-hidden className={`w-0.5 self-stretch ${MARKER[marker]}`} />
-      <span className="w-16 shrink-0 bg-gutter px-2 py-3 text-right font-mono text-xs text-muted tabular sm:w-20">
+      <span aria-hidden className={`w-1 self-stretch transition-[width,box-shadow] duration-150 group-hover:w-1.5 ${BAND[marker]}`} />
+      <span className="flex w-18 shrink-0 items-center justify-end border-r border-dashed border-line-strong bg-surface-2 px-2.5 py-3 font-mono text-xs font-bold text-ink tabular sm:w-22">
         {gutter}
       </span>
       <span className="min-w-0 flex-1 px-4 py-3">{children}</span>
       {aside ? <span className="flex shrink-0 items-center gap-3 pr-4">{aside}</span> : null}
     </>
   );
-  const className =
-    "flex items-stretch border-b border-line last:border-b-0 bg-surface transition-colors";
+  const className = "group flex items-stretch bg-surface transition-colors duration-150";
   return to ? (
-    <Link to={to} className={`${className} hover:bg-surface-2`}>
+    <Link to={to} className={`${className} hover:bg-surface-3`}>
       {body}
     </Link>
   ) : (
@@ -49,10 +50,15 @@ export function GutterRow({
   );
 }
 
+/** The strip board: strips slide in one after another, top to bottom. Each child is one list item. */
 export function GutterList({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div role="list" aria-label={label} className="overflow-hidden rounded-lg border border-line">
-      {children}
+    <div role="list" aria-label={label} className="space-y-1.5">
+      {Children.map(children, (child, i) => (
+        <motion.div role="listitem" variants={row} custom={i} initial="hidden" animate="show" className="overflow-hidden rounded-[5px] border border-line shadow-panel transition-[border-color] duration-150 hover:border-line-strong">
+          {child}
+        </motion.div>
+      ))}
     </div>
   );
 }

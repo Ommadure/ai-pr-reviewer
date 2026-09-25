@@ -152,3 +152,26 @@ export function useLogout() {
     onSettled: () => client.clear(),
   });
 }
+
+export type Systems = { api: boolean; database: boolean; redis: boolean };
+
+/**
+ * The status bar's system lights: /ready answers 200 or 503 with per-check results.
+ * Anything else (no answer at all) means the API itself is down.
+ */
+export function useSystems() {
+  return useQuery({
+    queryKey: ["systems"],
+    queryFn: async (): Promise<Systems> => {
+      try {
+        const response = await fetch("/api/v1/ready", { headers: { Accept: "application/json" } });
+        const body = (await response.json()) as { checks?: Record<string, string> };
+        return { api: true, database: body.checks?.database === "ok", redis: body.checks?.redis === "ok" };
+      } catch {
+        return { api: false, database: false, redis: false };
+      }
+    },
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  });
+}

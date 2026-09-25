@@ -1,8 +1,10 @@
-import { useAnalytics, useInstallations } from "../api/hooks";
+import { useAnalytics, useInstallations, useMe } from "../api/hooks";
 import { Charts } from "../components/LazyAnalytics";
 import { Empty, ErrorState, Loading, PageTitle } from "../components/States";
+import { button } from "../components/ui";
 
 export function OverviewPage() {
+  const me = useMe();
   const installations = useInstallations();
   const analytics = useAnalytics("30d");
 
@@ -17,7 +19,7 @@ export function OverviewPage() {
           <p>No repositories you can see have ReviewPilot installed yet.</p>
           <a
             href={installations.data.install_url}
-            className="mt-4 inline-block rounded-md bg-ink px-4 py-2 text-sm font-medium text-bg hover:opacity-90"
+            className={`${button.primary} mt-5`}
           >
             Install on GitHub
           </a>
@@ -29,7 +31,7 @@ export function OverviewPage() {
   const accounts = installations.data.installations.map((i) => i.account_login).join(", ");
   return (
     <>
-      <PageTitle eyebrow={`last 30 days · ${accounts}`} title="Overview" />
+      <PageTitle eyebrow={`last 30 days · ${accounts}`} title={me.data ? `${greeting()}, ${me.data.login}` : "Overview"} />
       {analytics.isPending ? (
         <Loading label="Loading analytics" />
       ) : analytics.isError ? (
@@ -39,4 +41,9 @@ export function OverviewPage() {
       )}
     </>
   );
+}
+
+function greeting(now: Date = new Date()): string {
+  const hour = now.getHours();
+  return hour < 5 ? "Night shift" : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 }

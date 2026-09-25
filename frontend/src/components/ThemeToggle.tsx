@@ -1,30 +1,29 @@
-import { useState } from "react";
+import { motion } from "motion/react";
+import { useId } from "react";
+import { SPRING } from "../lib/motion";
+import { setTheme, useTheme, type Theme } from "../lib/theme";
 
-type Theme = "light" | "dark";
-
-function current(): Theme {
-  return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
-}
-
-export function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>(current);
+/** Panel lighting, as on a flight deck: DAY or NIGHT. The lit segment is the one in use. */
+export function ThemeToggle({ className = "" }: { className?: string }) {
+  const theme = useTheme();
   const next: Theme = theme === "dark" ? "light" : "dark";
+  const id = useId(); // each switch animates its own thumb
   return (
     <button
       type="button"
-      onClick={() => {
-        document.documentElement.dataset.theme = next;
-        try {
-          localStorage.setItem("rp-theme", next);
-        } catch {
-          // private mode: the choice just won't persist
-        }
-        setTheme(next);
-      }}
+      onClick={() => setTheme(next)}
       aria-label={`Switch to ${next} theme`}
-      className="rounded-md border border-line px-2.5 py-1.5 font-mono text-xs text-muted hover:text-ink"
+      title="Panel lighting"
+      className={`relative inline-grid h-7 grid-cols-2 items-center rounded-[4px] border border-line bg-surface-2 p-0.5 font-mono text-[10px] font-bold tracking-[0.08em] ${className}`}
     >
-      {theme === "dark" ? "◐ dark" : "◑ light"}
+      {(["light", "dark"] as Theme[]).map((t) => (
+        <span key={t} className={`relative z-10 px-2 transition-colors duration-150 ${theme === t ? "text-ink" : "text-faint"}`}>
+          {theme === t ? (
+            <motion.span layoutId={`lighting-${id}`} transition={SPRING} className="absolute inset-0 -z-10 rounded-[3px] border border-line-strong bg-surface shadow-panel" />
+          ) : null}
+          {t === "light" ? "DAY" : "NGT"}
+        </span>
+      ))}
     </button>
   );
 }
