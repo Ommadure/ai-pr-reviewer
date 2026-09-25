@@ -1,10 +1,13 @@
+import { motion } from "motion/react";
 import { useParams, useSearchParams } from "react-router";
 import { useAnalytics, usePulls, useRepositories, useRepositoryConfig } from "../api/hooks";
 import { StatusPill } from "../components/Badges";
 import { Charts } from "../components/LazyAnalytics";
 import { GutterList, GutterRow } from "../components/Gutter";
 import { Empty, ErrorState, Loading, PageTitle } from "../components/States";
+import { button, field } from "../components/ui";
 import { ago, humanize } from "../lib/format";
+import { SPRING } from "../lib/motion";
 
 const TABS = [
   { id: "pulls", label: "Pull requests" },
@@ -26,8 +29,8 @@ export function RepositoryPage() {
 
   return (
     <>
-      <PageTitle eyebrow={repo.enabled ? "automatic reviews on" : "automatic reviews off"} title={repo.full_name} />
-      <div role="tablist" aria-label="Repository sections" className="mb-5 flex gap-1 border-b border-line">
+      <PageTitle eyebrow={repo.enabled ? "automatic reviews on" : "automatic reviews off"} title={<span className="font-mono text-[0.8em] tracking-tight">{repo.full_name}</span>} />
+      <div role="tablist" aria-label="Repository sections" className="mb-6 flex gap-1 border-b border-line">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -37,11 +40,14 @@ export function RepositoryPage() {
             aria-selected={tab === t.id}
             aria-controls={`panel-${t.id}`}
             onClick={() => setParams({ tab: t.id }, { replace: true })}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm ${
-              tab === t.id ? "border-accent font-medium text-ink" : "border-transparent text-muted hover:text-ink"
+            className={`relative -mb-px min-h-10 px-3 text-sm transition-colors duration-150 ${
+              tab === t.id ? "font-medium text-ink" : "text-muted hover:text-ink"
             }`}
           >
             {t.label}
+            {tab === t.id ? (
+              <motion.span layoutId="repo-tab" transition={SPRING} className="absolute inset-x-2 -bottom-px h-0.5 bg-route" />
+            ) : null}
           </button>
         ))}
       </div>
@@ -62,12 +68,12 @@ function PullsTab({ repositoryId }: { repositoryId: number }) {
 
   return (
     <>
-      <label className="mb-3 flex items-center gap-2 text-sm text-muted">
+      <label className="mb-4 flex items-center gap-2 text-sm text-muted">
         Show
         <select
           value={state}
           onChange={(e) => setParams({ tab: "pulls", state: e.target.value }, { replace: true })}
-          className="rounded-md border border-line bg-surface px-2 py-1 text-ink"
+          className={field}
         >
           <option value="open">open</option>
           <option value="merged">merged</option>
@@ -88,21 +94,20 @@ function PullsTab({ repositoryId }: { repositoryId: number }) {
         <>
           <GutterList label="Pull requests">
             {items.map((pr) => (
-              <div role="listitem" key={pr.id}>
-                <GutterRow
-                  to={`/pulls/${pr.id}`}
-                  gutter={`#${pr.number}`}
-                  marker={pr.last_run?.status === "failed" ? "del" : pr.last_run ? "accent" : "none"}
-                  aside={pr.last_run ? <StatusPill status={pr.last_run.status} /> : <span className="text-xs text-muted">not reviewed</span>}
-                >
-                  <span className="block truncate font-medium">{pr.title}</span>
-                  <span className="mt-0.5 block text-xs text-muted">
-                    {pr.author_login} · {humanize(pr.state)}
-                    {pr.draft ? " · draft" : ""}
-                    {pr.paused ? " · reviews paused" : ""} · updated {ago(pr.updated_at)}
-                  </span>
-                </GutterRow>
-              </div>
+              <GutterRow
+                key={pr.id}
+                to={`/pulls/${pr.id}`}
+                gutter={`#${pr.number}`}
+                marker={pr.last_run?.status === "failed" ? "del" : pr.last_run ? "accent" : "none"}
+                aside={pr.last_run ? <StatusPill status={pr.last_run.status} /> : <StatusPill status="none" label="not reviewed" />}
+              >
+                <span className="block truncate font-medium">{pr.title}</span>
+                <span className="mt-0.5 block text-xs text-muted">
+                  {pr.author_login} · {humanize(pr.state)}
+                  {pr.draft ? " · draft" : ""}
+                  {pr.paused ? " · reviews paused" : ""} · updated {ago(pr.updated_at)}
+                </span>
+              </GutterRow>
             ))}
           </GutterList>
           {pulls.hasNextPage ? (
@@ -110,7 +115,7 @@ function PullsTab({ repositoryId }: { repositoryId: number }) {
               type="button"
               onClick={() => pulls.fetchNextPage()}
               disabled={pulls.isFetchingNextPage}
-              className="mt-3 rounded-md border border-line bg-surface px-4 py-2 text-sm hover:bg-surface-2 disabled:opacity-60"
+              className={`${button.secondary} mt-4`}
             >
               {pulls.isFetchingNextPage ? "Loading…" : "Load more"}
             </button>
@@ -141,22 +146,29 @@ function ConfigTab({ repositoryId }: { repositoryId: number }) {
         read from <code className="font-mono text-xs">{c.commit_sha.slice(0, 7)}</code> {ago(c.fetched_at)}
       </p>
       {[...c.errors, ...c.warnings].length ? (
-        <ul className="space-y-1 rounded-lg border border-line bg-surface p-4 text-sm">
+        <ul className="space-y-1.5 rounded-[8px] border border-line bg-surface p-4 text-sm">
           {c.errors.map((e) => (
-            <li key={e} className="text-del-ink">✕ {e}</li>
+            <li key={e} className="text-red">
+              <span className="font-mono text-[10px] font-bold">ERROR</span> {e}
+            </li>
           ))}
           {c.warnings.map((w) => (
-            <li key={w} className="text-sev-medium">! {w}</li>
+            <li key={w} className="text-amber">
+              <span className="font-mono text-[10px] font-bold">WARN</span> {w}
+            </li>
           ))}
         </ul>
       ) : null}
       {c.has_file ? (
-        <pre className="overflow-x-auto rounded-lg border border-line bg-surface p-4 font-mono text-xs leading-relaxed">{c.raw_yaml}</pre>
+        <figure className="overflow-hidden rounded-[8px] border border-line bg-surface shadow-panel">
+          <figcaption className="placard border-b border-line bg-surface-2 px-4 py-2.5 !text-[10px]">.reviewpilot.yml</figcaption>
+          <pre className="overflow-x-auto p-4 font-mono text-xs leading-relaxed">{c.raw_yaml}</pre>
+        </figure>
       ) : (
         <p className="text-sm text-muted">This repository has no .reviewpilot.yml, so the defaults apply.</p>
       )}
-      <details className="rounded-lg border border-line bg-surface p-4 text-sm">
-        <summary className="cursor-pointer text-muted">Settings in effect</summary>
+      <details className="rounded-[8px] border border-line bg-surface p-4 text-sm">
+        <summary className="cursor-pointer text-muted hover:text-ink">Settings in effect</summary>
         <pre className="mt-3 overflow-x-auto font-mono text-xs">{JSON.stringify(c.parsed, null, 2)}</pre>
       </details>
     </div>

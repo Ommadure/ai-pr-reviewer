@@ -1,47 +1,67 @@
 @import "tailwindcss";
 
-/* ReviewPilot tokens. Every colour in the UI comes from here. */
+/*
+ * ReviewPilot tokens: a glass cockpit. Colour follows the EFIS convention pilots read at
+ * a glance, so every hue has exactly one job:
+ *   magenta (route)  the brand and the one primary action, like the active flight plan
+ *   cyan             what you can select or have selected (links, focus, active values)
+ *   green            engaged / done        amber  caution        red  warning
+ * Night panel is the default look; day panel is the sunlit version of the same instruments.
+ */
 :root {
-  --bg: #f2f4f7; /* pale slate: the page */
-  --surface: #ffffff;
-  --surface-2: #f8f9fb;
-  --ink: #1b1f27; /* graphite text */
-  --muted: #5d6675;
-  --line: #dde1e8;
-  --gutter: #eceff4; /* the diff gutter */
-  --accent: #5a48d6; /* annotation violet: an inline comment thread */
-  --accent-soft: #ecebfb;
-  --add: #e3f6e8;
-  --add-ink: #1a7f37;
-  --del: #fdecea;
-  --del-ink: #b42318;
-  --sev-critical: #b42318;
-  --sev-high: #d9480f;
-  --sev-medium: #b7791f;
-  --sev-low: #3b6ea8;
-  --sev-info: #667085;
+  --bg: #e4e5e1; /* day panel: avionics grey */
+  --surface: #f3f3f0;
+  --surface-2: #eaebe7;
+  --surface-3: #dfe0db;
+  --ink: #14181e;
+  --muted: #4f5763;
+  --faint: #8a9098; /* graduations and decoration only, never body text */
+  --line: #cdd0c9;
+  --line-strong: #a3a8a0;
+  --route: #a11caf;
+  --route-soft: #a11caf1f;
+  --on-route: #ffffff;
+  --cyan: #0a7185;
+  --cyan-soft: #0a71851a;
+  --green: #127a43;
+  --green-soft: #127a431a;
+  --amber: #945400;
+  --amber-soft: #b8740e24;
+  --red: #bf241b;
+  --red-soft: #bf241b1a;
+  --grid: #14181e0d;
+  --glow: 0 0 0 transparent;
+  --shadow-panel: 0 1px 0 #ffffffb3 inset, 0 1px 2px #14181e14, 0 8px 24px -12px #14181e2e;
+  /* motion: entering decelerates, leaving accelerates (see lib/motion.ts) */
+  --ease-decelerate: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-accelerate: cubic-bezier(0.7, 0, 0.84, 0);
   color-scheme: light;
 }
 
 :root[data-theme="dark"] {
-  --bg: #0f1115;
-  --surface: #171a21;
-  --surface-2: #1c2029;
-  --ink: #e6e8ee;
-  --muted: #9aa3b2;
-  --line: #2a2f3a;
-  --gutter: #20242d;
-  --accent: #8b7ff0;
-  --accent-soft: #25224a;
-  --add: #16301f;
-  --add-ink: #56d37a;
-  --del: #3a1c1c;
-  --del-ink: #ff8a80;
-  --sev-critical: #ff6b5f;
-  --sev-high: #ff9a5c;
-  --sev-medium: #e8b64c;
-  --sev-low: #7aa7e0;
-  --sev-info: #9aa3b2;
+  --bg: #080b10; /* night panel: blue-black glass */
+  --surface: #0e131a;
+  --surface-2: #131a23;
+  --surface-3: #19222e;
+  --ink: #e4eaf1;
+  --muted: #93a2b4;
+  --faint: #56657a;
+  --line: #202a37;
+  --line-strong: #33435a;
+  --route: #e46cff;
+  --route-soft: #e46cff24;
+  --on-route: #1b0521;
+  --cyan: #5cd5ee;
+  --cyan-soft: #5cd5ee1c;
+  --green: #4ade8c;
+  --green-soft: #4ade8c1a;
+  --amber: #ffb547;
+  --amber-soft: #ffb5471c;
+  --red: #ff5d55;
+  --red-soft: #ff5d551f;
+  --grid: #93a2b40d;
+  --glow: 0 0 18px -4px var(--route);
+  --shadow-panel: 0 1px 0 #ffffff08 inset, 0 12px 32px -16px #000000b3;
   color-scheme: dark;
 }
 
@@ -49,24 +69,47 @@
   --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
   --color-ink: var(--ink);
   --color-muted: var(--muted);
+  --color-faint: var(--faint);
   --color-line: var(--line);
-  --color-gutter: var(--gutter);
-  --color-accent: var(--accent);
-  --color-accent-soft: var(--accent-soft);
-  --color-add: var(--add);
-  --color-add-ink: var(--add-ink);
-  --color-del: var(--del);
-  --color-del-ink: var(--del-ink);
-  --color-sev-critical: var(--sev-critical);
-  --color-sev-high: var(--sev-high);
-  --color-sev-medium: var(--sev-medium);
-  --color-sev-low: var(--sev-low);
-  --color-sev-info: var(--sev-info);
-  --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --color-line-strong: var(--line-strong);
+  --color-route: var(--route);
+  --color-route-soft: var(--route-soft);
+  --color-on-route: var(--on-route);
+  --color-cyan: var(--cyan);
+  --color-cyan-soft: var(--cyan-soft);
+  --color-green: var(--green);
+  --color-green-soft: var(--green-soft);
+  --color-amber: var(--amber);
+  --color-amber-soft: var(--amber-soft);
+  --color-red: var(--red);
+  --color-red-soft: var(--red-soft);
+
+  /* Older role names, re-pointed at the cockpit palette. */
+  --color-gutter: var(--surface-2);
+  --color-accent: var(--route);
+  --color-accent-soft: var(--route-soft);
+  --color-add: var(--green-soft);
+  --color-add-ink: var(--green);
+  --color-del: var(--red-soft);
+  --color-del-ink: var(--red);
+  --color-sev-critical: var(--red);
+  --color-sev-high: var(--amber);
+  --color-sev-medium: var(--amber);
+  --color-sev-low: var(--cyan);
+  --color-sev-info: var(--muted);
+
+  --font-display: "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-mono: "B612 Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --shadow-panel: var(--shadow-panel);
+  --ease-out: var(--ease-decelerate);
+  --ease-in: var(--ease-accelerate);
+
+  --animate-sweep: sweep 4s linear infinite;
 }
 
 html,
@@ -77,33 +120,135 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Visible keyboard focus everywhere; mouse clicks don't get the ring. */
-:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-  border-radius: 4px;
+/* The instrument grid behind everything: faint, and fading out toward the edges. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 30%, #000 30%, transparent 85%);
+}
+
+::selection {
+  background: var(--route-soft);
+}
+
+/* Focus is instant and cyan everywhere: cyan means "selected" on the panel. In the base
+   layer, so a component's own focus utility can still refine it. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--cyan);
+    outline-offset: 2px;
+  }
 }
 
 .tabular {
   font-variant-numeric: tabular-nums;
 }
 
-/* The landing page's one orchestrated moment: the comment attaches to its line. */
-@keyframes attach {
+/* Tiny all-caps instrument label, as printed on a panel. A utility, so variants work. */
+@utility placard {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/*
+ * A panel that catches light where the pointer is, like glass under a cockpit lamp.
+ * spotlight() in lib/spotlight.ts writes --mx/--my; without a pointer the glow simply never appears.
+ */
+.spotlight {
+  position: relative;
+  isolation: isolate;
+}
+.spotlight::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 250ms var(--ease-decelerate);
+  background: radial-gradient(360px circle at var(--mx, 50%) var(--my, 50%), var(--route-soft), transparent 60%);
+  z-index: -1;
+}
+.spotlight:hover::after {
+  opacity: 1;
+}
+
+/* Radar sweep and annunciator blink. */
+@keyframes sweep {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+/* A contact lights up as the sweep passes over it, then decays. */
+@keyframes ping {
+  0% {
+    opacity: 1;
+    transform: scale(1.6);
+  }
+  12% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0.28;
+    transform: scale(1);
+  }
+}
+@keyframes scan {
   from {
-    opacity: 0;
-    transform: translateY(-6px);
+    transform: translateX(-100%);
   }
   to {
-    opacity: 1;
-    transform: translateY(0);
+    transform: translateX(100%);
   }
 }
-.attach {
-  animation: attach 480ms 450ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+
+/* Radar scope (RadarScope.tsx): the sweep and its contacts share one period, so each
+   contact pings exactly when the leading edge crosses its bearing. */
+.scope-sweep {
+  background: conic-gradient(from 0deg, transparent 0deg 250deg, var(--route-soft) 320deg, color-mix(in srgb, var(--route) 38%, transparent) 360deg);
+  animation: sweep var(--period, 4s) linear infinite;
 }
+.contact-ping {
+  animation: ping var(--period, 4s) linear infinite;
+  animation-delay: var(--delay, 0s);
+}
+.scope[data-paused] *,
+.scope[data-paused] {
+  animation-play-state: paused !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .attach {
-    animation: none;
+  /* Still scope: no sweep, and every contact stays lit instead of decaying. */
+  .scope-sweep,
+  .contact-ping {
+    animation: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

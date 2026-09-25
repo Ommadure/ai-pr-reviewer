@@ -36,9 +36,10 @@ export function renderRoute(element: ReactElement, { path = "/", url = path }: {
     ],
     { initialEntries: [url] },
   );
-  return render(
+  const result = render(
     <QueryClientProvider client={client}>
       <RouterProvider router={router} />
     </QueryClientProvider>,
   );
+  return { ...result, router };
 }

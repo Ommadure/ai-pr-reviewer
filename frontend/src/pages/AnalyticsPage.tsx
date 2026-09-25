@@ -1,8 +1,11 @@
+import { motion } from "motion/react";
 import { useSearchParams } from "react-router";
 import { useAnalytics, useRepositories } from "../api/hooks";
 import type { Range } from "../api/types";
 import { Charts } from "../components/LazyAnalytics";
 import { ErrorState, Loading, PageTitle } from "../components/States";
+import { field } from "../components/ui";
+import { SPRING } from "../lib/motion";
 
 const RANGES: Range[] = ["7d", "30d", "90d"];
 
@@ -21,8 +24,8 @@ export function AnalyticsPage() {
   return (
     <>
       <PageTitle title="Analytics" eyebrow="reviews, cost and usefulness" />
-      <div className="mb-5 flex flex-wrap items-center gap-3">
-        <div role="radiogroup" aria-label="Time range" className="inline-flex overflow-hidden rounded-md border border-line bg-surface">
+      <div className="mb-6 flex flex-wrap items-center gap-4">
+        <div role="radiogroup" aria-label="Time range" className="inline-flex rounded-[5px] border border-line bg-surface-2 p-0.5">
           {RANGES.map((r) => (
             <button
               key={r}
@@ -30,9 +33,10 @@ export function AnalyticsPage() {
               role="radio"
               aria-checked={r === range}
               onClick={() => update({ range: r })}
-              className={`px-3 py-1.5 font-mono text-xs ${r === range ? "bg-accent text-white" : "text-muted hover:text-ink"}`}
+              className={`relative min-h-8 px-3.5 font-mono text-xs font-bold transition-colors duration-150 ${r === range ? "text-on-route" : "text-muted hover:text-ink"}`}
             >
-              {r}
+              {r === range ? <motion.span layoutId="range-thumb" transition={SPRING} className="absolute inset-0 rounded-[3px] bg-route" /> : null}
+              <span className="relative">{r}</span>
             </button>
           ))}
         </div>
@@ -41,7 +45,7 @@ export function AnalyticsPage() {
           <select
             value={repositoryId ?? ""}
             onChange={(e) => update({ repository: e.target.value })}
-            className="rounded-md border border-line bg-surface px-2 py-1 text-ink"
+            className={field}
           >
             <option value="">all repositories</option>
             {repositories.data?.map((r) => (
@@ -57,7 +61,7 @@ export function AnalyticsPage() {
       ) : analytics.isError ? (
         <ErrorState error={analytics.error} onRetry={() => analytics.refetch()} />
       ) : (
-        <div className={analytics.isPlaceholderData ? "opacity-60 transition-opacity" : ""}>
+        <div className={`transition-opacity duration-200 ${analytics.isPlaceholderData ? "opacity-50" : ""}`}>
           <Charts data={analytics.data} />
         </div>
       )}
