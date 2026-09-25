@@ -15,12 +15,13 @@ Manual reviews are rate limited (5 per PR per hour) because each one costs LLM c
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any
 
 import structlog
 from sqlalchemy import func, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.rate_limit import RateLimiter, manual_review_key
 from app.github import events
 from app.github.app_auth import GitHubAppAuth
 from app.github.client import GitHubClient, GitHubError
@@ -59,12 +60,6 @@ class CommandJob:
 
     def to_dict(self) -> dict[str, Any]:
         return self.__dict__.copy()
-
-
-class RateLimiter(Protocol):
-    async def hit(self, key: str, *, limit: int, window_seconds: int) -> bool:
-        """Count one use; True if still within the limit."""
-        ...
 
 
 @dataclass(frozen=True)
@@ -126,7 +121,7 @@ async def handle_command(deps: CommandDeps, job: CommandJob) -> str:
     match job.command:
         case "review":
             allowed = await deps.rate_limiter.hit(
-                f"cmd:review:{pr.id}", limit=MANUAL_REVIEWS_PER_HOUR, window_seconds=3600
+                manual_review_key(pr.id), limit=MANUAL_REVIEWS_PER_HOUR, window_seconds=3600
             )
             if not allowed:
                 await reply(

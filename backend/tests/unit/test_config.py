@@ -45,6 +45,9 @@ def _complete_dev_settings(**overrides: object) -> dict[str, object]:
         "database_url": "postgresql+asyncpg://u:p@localhost/db",
         "redis_url": "redis://localhost",
         "github_app_client_id": "Iv23liTestClientId",
+        "github_app_client_secret": "client-secret",
+        "session_secret": "s" * 32,
+        "encryption_key": "Hgl4Jz2Xuv7w5Xc4h8QKZg3VJvG1H8m1nX2ycZ3Y0zE=",
         "github_app_private_key_b64": base64.b64encode(
             b"-----BEGIN RSA PRIVATE KEY-----\n..."
         ).decode(),
@@ -75,10 +78,27 @@ def test_bad_private_key_fails_at_startup(bad_key: str) -> None:
         Settings(**_complete_dev_settings(github_app_private_key_b64=bad_key))  # type: ignore[arg-type]
 
 
-def test_either_client_id_or_app_id_identifies_the_app() -> None:
-    Settings(**_complete_dev_settings(github_app_client_id="", github_app_id="123"))  # type: ignore[arg-type]
+def test_jwt_issuer_prefers_client_id_but_accepts_app_id() -> None:
+    assert Settings(**_complete_dev_settings()).github_app_jwt_issuer == "Iv23liTestClientId"  # type: ignore[arg-type]
+    with_app_id = _complete_dev_settings(github_app_client_id="", github_app_id="123")
+    assert (
+        Settings(_env_file=None, app_env="test", github_app_id="123").github_app_jwt_issuer == "123"
+    )
     with pytest.raises(ValidationError, match="GITHUB_APP_CLIENT_ID"):
-        Settings(**_complete_dev_settings(github_app_client_id="", github_app_id=""))  # type: ignore[arg-type]
+        Settings(**with_app_id)  # type: ignore[arg-type]  # login needs the client id
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"session_secret": "short"}, "SESSION_SECRET must be at least 32"),
+        ({"encryption_key": "not-a-fernet-key"}, "ENCRYPTION_KEY is not a valid Fernet key"),
+        ({"github_app_client_secret": ""}, "GITHUB_APP_CLIENT_SECRET"),
+    ],
+)
+def test_login_and_session_secrets_are_validated(overrides: dict[str, str], message: str) -> None:
+    with pytest.raises(ValidationError, match=message):
+        Settings(**_complete_dev_settings(**overrides))  # type: ignore[arg-type]
 
 
 def test_llm_pricing_is_parsed_from_json_env(monkeypatch: pytest.MonkeyPatch) -> None:

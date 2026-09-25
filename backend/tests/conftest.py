@@ -34,7 +34,7 @@ from app.db.base import Base
 from app.db.session import get_session
 from app.main import create_app
 from app.services.dispatch import get_review_dispatcher
-from tests.helpers import WEBHOOK_SECRET, RecordingDispatcher
+from tests.helpers import TEST_FERNET_KEY, WEBHOOK_SECRET, RecordingDispatcher
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 
@@ -53,6 +53,12 @@ def settings() -> Settings:
         app_env="test",
         github_webhook_secret=WEBHOOK_SECRET,
         github_app_slug="reviewpilot-test",
+        github_app_client_id="Iv23liTest",
+        github_app_client_secret="test-client-secret",
+        session_secret="s" * 40,
+        encryption_key=TEST_FERNET_KEY,
+        frontend_url="http://localhost:5173",
+        usd_to_inr=83.0,
     )
 
 

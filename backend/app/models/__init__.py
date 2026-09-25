@@ -4,6 +4,7 @@ from app.models.installation import Installation
 from app.models.pull_request import PullRequest
 from app.models.repository import Repository
 from app.models.review import LLMCall, RepoConfigRecord, ReviewCommentRecord, ReviewRun
+from app.models.user import User, UserInstallation
 from app.models.webhook_delivery import WebhookDelivery
 
 __all__ = [
@@ -14,5 +15,7 @@ __all__ = [
     "Repository",
     "ReviewCommentRecord",
     "ReviewRun",
+    "User",
+    "UserInstallation",
     "WebhookDelivery",
 ]

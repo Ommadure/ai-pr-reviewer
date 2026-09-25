@@ -9,7 +9,7 @@ export default defineConfig({
     // Same-origin in dev too: the browser calls /api/*, Vite forwards to FastAPI.
     // Production does the same with a Vercel rewrite, so session cookies stay first-party.
     proxy: {
-      "/api": "http://localhost:8000",
+      "/api": process.env.API_URL ?? "http://localhost:8000",
     },
   },
   test: {
