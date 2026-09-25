@@ -1,0 +1,12 @@
+id: tsx-hook-deps-01
+language: typescript
+description: Effect ignores changes to the userId prop
+title: Order history panel
+planted_bugs:
+- path: src/components/OrderHistory.tsx
+  lines:
+  - 9
+  - 9
+  category: bug
+  severity: medium
+  description: 'Empty dependency array: switching userId keeps showing the first user''s orders'

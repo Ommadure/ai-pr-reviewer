@@ -1,0 +1,8 @@
+diff --git a/db/migrations/0042_order_currency.sql b/db/migrations/0042_order_currency.sql
+new file mode 100644
+--- /dev/null
++++ b/db/migrations/0042_order_currency.sql
+@@ -0,0 +1,3 @@
++-- Orders can now be placed in several currencies.
++ALTER TABLE orders ADD COLUMN currency CHAR(3) NOT NULL;
++CREATE INDEX orders_currency_idx ON orders (currency);

@@ -1,0 +1,13 @@
+diff --git a/app/payments/split.py b/app/payments/split.py
+--- a/app/payments/split.py
++++ b/app/payments/split.py
+@@ -1 +1,9 @@
+ from decimal import Decimal
++
++
++def split_bill(total: Decimal, people: int) -> list[Decimal]:
++    """Each person's share; the shares must add up to the total."""
++    if people <= 0:
++        raise ValueError("people must be positive")
++    share = round(total / people, 2)
++    return [share] * people

@@ -1,0 +1,12 @@
+id: py-missing-await-01
+language: python
+description: Async order service forgets to await the commit
+title: Let support cancel orders
+planted_bugs:
+- path: app/orders/service.py
+  lines:
+  - 16
+  - 16
+  category: bug
+  severity: high
+  description: session.commit() is a coroutine and is never awaited, so the cancellation is not saved

@@ -1,0 +1,12 @@
+id: py-wrong-comparison-01
+language: python
+description: String compared with `is`
+title: Project deletion permissions
+planted_bugs:
+- path: app/admin/permissions.py
+  lines:
+  - 5
+  - 5
+  category: bug
+  severity: high
+  description: '`is` compares identity, not value: admins may be denied'

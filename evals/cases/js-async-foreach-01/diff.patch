@@ -1,0 +1,12 @@
+diff --git a/src/services/import.js b/src/services/import.js
+--- a/src/services/import.js
++++ b/src/services/import.js
+@@ -1 +1,8 @@
+ import { db } from "../db.js";
++
++export async function importContacts(contacts) {
++  contacts.forEach(async (contact) => {
++    await db.contacts.insert(contact);
++  });
++  return { imported: contacts.length };
++}

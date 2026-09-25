@@ -1,0 +1,12 @@
+id: py-sql-injection-01
+language: python
+description: Product search builds SQL with an f-string
+title: Add product search
+planted_bugs:
+- path: app/catalog/search.py
+  lines:
+  - 15
+  - 17
+  category: security
+  severity: critical
+  description: 'SQL injection: search term interpolated into the query'

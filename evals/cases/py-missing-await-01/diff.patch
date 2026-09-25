@@ -1,0 +1,17 @@
+diff --git a/app/orders/service.py b/app/orders/service.py
+--- a/app/orders/service.py
++++ b/app/orders/service.py
+@@ -5,3 +5,13 @@
+ 
+ async def get_order(session: AsyncSession, order_id: int) -> Order | None:
+     return await session.get(Order, order_id)
++
++
++async def cancel_order(session: AsyncSession, order_id: int, reason: str) -> Order:
++    order = await session.get(Order, order_id)
++    if order is None:
++        raise LookupError(f"order {order_id} not found")
++    order.status = "cancelled"
++    order.cancel_reason = reason
++    session.commit()
++    return order

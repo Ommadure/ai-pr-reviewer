@@ -1,0 +1,12 @@
+diff --git a/app/reviews/stats.py b/app/reviews/stats.py
+--- a/app/reviews/stats.py
++++ b/app/reviews/stats.py
+@@ -1 +1,8 @@
+ from app.reviews.models import Review
++
++
++def average_rating(reviews: list[Review]) -> float | None:
++    ratings = [r.stars for r in reviews]
++    if not ratings:
++        return None
++    return sum(ratings) // len(ratings)

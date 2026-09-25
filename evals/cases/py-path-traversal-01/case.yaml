@@ -1,0 +1,12 @@
+id: py-path-traversal-01
+language: python
+description: Download endpoint joins a user-supplied filename
+title: File downloads
+planted_bugs:
+- path: app/api/files.py
+  lines:
+  - 12
+  - 13
+  category: security
+  severity: critical
+  description: 'Path traversal: ../ in filename reads any file on the server'

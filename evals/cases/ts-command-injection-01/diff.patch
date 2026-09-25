@@ -1,0 +1,13 @@
+diff --git a/src/build/clone.ts b/src/build/clone.ts
+--- a/src/build/clone.ts
++++ b/src/build/clone.ts
+@@ -2,3 +2,9 @@
+ import { exec as execCb } from "node:child_process";
+ 
+ const exec = promisify(execCb);
++
++export async function cloneForBuild(repoUrl: string, buildId: string) {
++  const dir = `/tmp/builds/${buildId}`;
++  await exec(`git clone --depth 1 ${repoUrl} ${dir}`);
++  return dir;
++}

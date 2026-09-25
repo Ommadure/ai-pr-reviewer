@@ -1,0 +1,13 @@
+diff --git a/app/search/filters.py b/app/search/filters.py
+--- a/app/search/filters.py
++++ b/app/search/filters.py
+@@ -5,3 +5,9 @@
+ class Filter:
+     field: str
+     value: str
++
++
++def add_filter(field: str, value: str, filters: list[Filter] = []) -> list[Filter]:
++    """Append a filter and return the list, for building queries step by step."""
++    filters.append(Filter(field, value))
++    return filters

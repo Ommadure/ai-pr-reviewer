@@ -1,0 +1,14 @@
+diff --git a/app/auth/tokens.py b/app/auth/tokens.py
+--- a/app/auth/tokens.py
++++ b/app/auth/tokens.py
+@@ -5,3 +5,10 @@
+ 
+ class TokenExpired(Exception):
+     pass
++
++
++def verify(token_id: str):
++    token = load_token(token_id)
++    if token.expires_at > datetime.now(UTC):
++        raise TokenExpired(token_id)
++    return token.user_id

@@ -1,0 +1,10 @@
+diff --git a/src/leaderboard.ts b/src/leaderboard.ts
+--- a/src/leaderboard.ts
++++ b/src/leaderboard.ts
+@@ -1 +1,6 @@
+ export type Score = { player: string; points: number };
++
++export function topThree(scores: Score[]): number[] {
++  const points = scores.map((s) => s.points);
++  return points.sort().reverse().slice(0, 3);
++}

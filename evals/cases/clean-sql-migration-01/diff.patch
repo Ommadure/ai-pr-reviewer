@@ -1,0 +1,11 @@
+diff --git a/db/migrations/0043_orders_channel.sql b/db/migrations/0043_orders_channel.sql
+new file mode 100644
+--- /dev/null
++++ b/db/migrations/0043_orders_channel.sql
+@@ -0,0 +1,6 @@
++-- Record which channel an order came from. Nullable first, so the change is
++-- instant on a large table; the backfill runs in batches from a job.
++ALTER TABLE orders ADD COLUMN channel TEXT;
++ALTER TABLE orders ADD CONSTRAINT orders_channel_check
++    CHECK (channel IN ('web', 'app', 'pos')) NOT VALID;
++CREATE INDEX orders_channel_idx ON orders (channel) WHERE channel IS NOT NULL;

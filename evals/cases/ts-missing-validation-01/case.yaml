@@ -1,0 +1,14 @@
+id: ts-missing-validation-01
+language: typescript
+description: Transfer endpoint trusts the amount from the client
+title: Peer-to-peer transfers
+planted_bugs:
+- path: src/routes/transfers.ts
+  lines:
+  - 10
+  - 11
+  category: security
+  severity: critical
+  description: 'amount is not validated: negative or NaN amounts move money the wrong way'
+  accept_categories:
+  - bug

@@ -1,0 +1,12 @@
+id: py-n-plus-one-01
+language: python
+description: Report runs one query per order
+title: Monthly revenue report
+planted_bugs:
+- path: reports/views.py
+  lines:
+  - 7
+  - 12
+  category: performance
+  severity: medium
+  description: 'N+1: order.customer triggers one query per order (use select_related)'

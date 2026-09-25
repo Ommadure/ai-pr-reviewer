@@ -72,7 +72,10 @@ async def run_review(
     prices: PriceTable | None = None,
     existing_fingerprints: Iterable[str] = frozenset(),
     prompt_version: str = prompt_builder.DEFAULT_PROMPT_VERSION,
+    summarize: bool = True,
 ) -> ReviewResult:
+    """Review `files`. `summarize=False` skips the PR-summary call (the eval harness
+    scores comments only, and free-tier quotas are small)."""
     budget = budget or ReviewBudget()
     prices = prices or PriceTable()
     skipped: list[SkippedFile] = []
@@ -144,7 +147,7 @@ async def run_review(
 
     # Reduce: one small call turns per-file notes into a PR-level summary.
     summary: PRSummaryOutput | None = None
-    if reviewed_paths:
+    if summarize and reviewed_paths:
         file_summaries = [FileSummary(path=p, summary=" ".join(s)) for p, s in summaries.items()]
         issues = [
             f"[{c.severity}] {c.path}:{c.line} {c.title}"

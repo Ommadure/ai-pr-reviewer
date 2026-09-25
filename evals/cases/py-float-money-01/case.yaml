@@ -1,0 +1,12 @@
+id: py-float-money-01
+language: python
+description: Bill split loses the rounding remainder
+title: Split a bill between friends
+planted_bugs:
+- path: app/payments/split.py
+  lines:
+  - 8
+  - 9
+  category: bug
+  severity: medium
+  description: Rounded equal shares don't sum to the total (e.g. 100 / 3)

@@ -11,6 +11,7 @@ from app.models import LLMCall, PullRequest, RepoConfigRecord, ReviewCommentReco
 from app.repositories import review_runs
 from app.review.llm.base import Completion, LLMError, Message
 from app.review.llm.fake import FakeLLMProvider
+from app.review.prompt_builder import DEFAULT_PROMPT_VERSION
 from app.services.orchestrator import (
     RetryableReviewError,
     ReviewBusy,
@@ -62,7 +63,7 @@ async def test_happy_path_posts_one_review_and_records_everything(
     assert (run.status, run.check_run_id, run.github_review_id) == ("completed", 77, 555)
     assert (run.comments_posted, run.comments_dropped_invalid_line) == (1, 1)
     assert run.input_tokens > 0 and run.latency_ms is not None and run.finished_at is not None
-    assert (run.prompt_version, run.model) == ("v1", "fake-model")
+    assert (run.prompt_version, run.model) == (DEFAULT_PROMPT_VERSION, "fake-model")
 
     rows = await all_rows(sessionmaker, ReviewCommentRecord)
     assert [(r.line, r.posted, r.drop_reason) for r in rows] == [

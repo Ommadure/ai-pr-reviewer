@@ -94,6 +94,24 @@ ReviewPilot polls 👍/👎 reactions on its comments every 30 minutes (bot reac
 
 A comment with mixed reactions counts in both, so the two rates don't add up to 100%. Both are also reported by category and by severity.
 
+## Evaluation
+
+An offline harness measures the review engine on 30 pull requests (25 with planted bugs, 5 clean) in Python, TypeScript, JavaScript and SQL. It reports precision, recall, F1, severity agreement, cost and latency. The full runs, what changed between prompt versions, and the reasoning are in [evals/RESULTS.md](evals/RESULTS.md). How to run it is in [evals/README.md](evals/README.md).
+
+| Prompt · model | Precision | Recall | F1 | FP per clean PR | Severity exact | p50 latency |
+| --- | --- | --- | --- | --- | --- | --- |
+| v1 · gemini-3.5-flash-lite | 96% | 96% | 96% | 0.0 | 62–71% | 1.7 s |
+| **v3 · gemini-3.5-flash-lite (shipped)** | 96% | 96% | 96% | 0.0 | 75% | 1.9 s |
+| v3 · gemini-3.1-flash-lite | 89% | 100% | 94% | 0.4 | 60% | 5.9 s |
+
+Every run cost $0 on the free tier. The dataset is at its ceiling for detection, so the prompt changes mainly improved severity and category calibration.
+
+```bash
+cd backend
+uv run python ../evals/run_eval.py --prompt v3 --model gemini-3.5-flash-lite --pause 4 --retry-errors 2
+uv run python ../evals/compare.py ../evals/results/A.json ../evals/results/B.json
+```
+
 ## Docs
 - [GitHub App setup](docs/github-app-setup.md)
 - [Architecture](docs/architecture.md)
@@ -110,3 +128,4 @@ A comment with mixed reactions counts in both, so the two rates don't add up to 
   - [0010 Review-run lifecycle and idempotency](docs/adr/0010-review-run-lifecycle.md)
   - [0011 Incremental reviews](docs/adr/0011-incremental-reviews.md)
   - [0012 Dashboard login, sessions and tenancy](docs/adr/0012-dashboard-auth-and-tenancy.md)
+  - [0013 Eval matching rule](docs/adr/0013-eval-matching-rule.md)

@@ -22,6 +22,7 @@ flowchart LR
 4. **ReviewPilot only ever comments.** It never approves or blocks a merge.
 5. **All PR content is untrusted data.**
 6. **Config is read from the default branch only.**
+7. **Prompt changes are measured, not guessed.** The eval harness (`app/evals/`, scripts in `evals/`) runs the same pure engine over 30 labelled cases and scores it ([ADR 0013](adr/0013-eval-matching-rule.md)). Every review run records its prompt version, so evals and production can be compared.
 
 ## Webhook → review flow (Phase 3)
 

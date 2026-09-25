@@ -1,0 +1,12 @@
+id: py-hardcoded-secret-01
+language: python
+description: Production database password committed in a URL
+title: Point billing at its own database
+planted_bugs:
+- path: app/billing/settings.py
+  lines:
+  - 7
+  - 7
+  category: security
+  severity: critical
+  description: Production database credentials hardcoded in source

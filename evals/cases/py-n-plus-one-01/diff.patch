@@ -1,0 +1,19 @@
+diff --git a/reports/views.py b/reports/views.py
+--- a/reports/views.py
++++ b/reports/views.py
+@@ -1,3 +1,15 @@
+ from django.http import JsonResponse
+ 
+ from shop.models import Order
++
++
++def monthly_revenue(request, year: int, month: int):
++    orders = Order.objects.filter(created_at__year=year, created_at__month=month)
++    rows = []
++    for order in orders:
++        rows.append({
++            "order": order.id,
++            "customer": order.customer.name,
++            "total": str(order.total),
++        })
++    return JsonResponse({"rows": rows})

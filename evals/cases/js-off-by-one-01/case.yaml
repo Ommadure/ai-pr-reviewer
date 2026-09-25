@@ -1,0 +1,12 @@
+id: js-off-by-one-01
+language: javascript
+description: Loop reads one past the end of the array
+title: Normalize post tags
+planted_bugs:
+- path: src/utils/tags.js
+  lines:
+  - 7
+  - 7
+  category: bug
+  severity: high
+  description: i <= length reads tags[length] (undefined) and slugify throws

@@ -1,0 +1,12 @@
+id: sql-not-null-migration-01
+language: sql
+description: NOT NULL column added to a populated table without a default
+title: Multi-currency orders
+planted_bugs:
+- path: db/migrations/0042_order_currency.sql
+  lines:
+  - 2
+  - 2
+  category: bug
+  severity: high
+  description: Adding a NOT NULL column without a default fails on a table that already has rows

@@ -1,0 +1,12 @@
+id: tsx-xss-01
+language: typescript
+description: Comment body rendered as raw HTML
+title: Show comments
+planted_bugs:
+- path: src/components/CommentView.tsx
+  lines:
+  - 7
+  - 7
+  category: security
+  severity: critical
+  description: 'XSS: user-written comment body injected as HTML'
