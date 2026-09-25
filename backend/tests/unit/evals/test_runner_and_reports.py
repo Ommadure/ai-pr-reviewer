@@ -1,6 +1,7 @@
 """The runner end to end with a scripted LLM, the metrics, and both reports."""
 
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -16,14 +17,16 @@ from app.review.models import ReviewBudget
 from app.review.pricing import PriceTable
 
 
-def oracle(cases: list[EvalCase], *, extra_on_clean: bool = False):
+def oracle(
+    cases: list[EvalCase], *, extra_on_clean: bool = False
+) -> Callable[[list[Message]], str]:
     """A responder that 'finds' each case's planted bugs, and optionally nitpicks clean ones."""
     by_path = {f.path: c for c in cases for f in c.files}
 
     def respond(messages: list[Message]) -> str:
         prompt = messages[-1].content
         case = next(c for path, c in by_path.items() if path in prompt)
-        comments = [
+        comments: list[dict[str, object]] = [
             {
                 "path": b.path,
                 "line": b.end,
