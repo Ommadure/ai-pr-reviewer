@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.pool import NullPool
 
 from app.core.config import Settings, get_settings
+from app.core.rate_limit import RedisRateLimiter
 from app.github.app_auth import GitHubAppAuth, RedisTokenCache
 from app.github.client import create_http_client
 from app.review.llm.factory import build_provider, price_table, review_budget, review_model
@@ -47,19 +48,6 @@ class RedisPRLock:
             if acquired:
                 with suppress(LockError):  # already expired: nothing to release
                     await lock.release()
-
-
-class RedisRateLimiter:
-    """Fixed-window counter: INCR a key, give it a TTL on first use."""
-
-    def __init__(self, redis: Redis) -> None:
-        self._redis = redis
-
-    async def hit(self, key: str, *, limit: int, window_seconds: int) -> bool:
-        count = int(await self._redis.incr(key))
-        if count == 1:
-            await self._redis.expire(key, window_seconds)
-        return count <= limit
 
 
 @dataclass(frozen=True)

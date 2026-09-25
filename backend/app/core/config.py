@@ -10,6 +10,7 @@ import binascii
 from functools import lru_cache
 from typing import Literal, Self
 
+from cryptography.fernet import Fernet
 from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -17,14 +18,20 @@ AppEnv = Literal["development", "test", "production"]
 LLMProviderName = Literal["gemini", "anthropic", "openai", "openai_compatible", "fake"]
 
 # Settings the *server* (api/worker/beat) needs outside of tests. The LLM settings
-# are checked separately below; session secrets join in Phase 5.
+# are checked separately below.
 REQUIRED_OUTSIDE_TESTS: tuple[str, ...] = (
     "database_url",
     "redis_url",
     "github_app_private_key_b64",
     # An empty webhook secret would make every forged webhook "valid".
     "github_webhook_secret",
+    # Dashboard login (GitHub App user authorization) and sessions.
+    "github_app_client_id",
+    "github_app_client_secret",
+    "session_secret",
+    "encryption_key",
 )
+MIN_SESSION_SECRET_LENGTH = 32
 
 
 class ReviewSettings(BaseSettings):
@@ -75,8 +82,11 @@ class Settings(ReviewSettings):
     github_webhook_secret: SecretStr = SecretStr("")
     github_app_slug: str = "reviewpilot-om"
 
-    session_secret: SecretStr = SecretStr("")
-    encryption_key: SecretStr = SecretStr("")
+    session_secret: SecretStr = SecretStr("")  # signs session + OAuth-state cookies
+    encryption_key: SecretStr = SecretStr("")  # Fernet key for stored GitHub user tokens
+    session_ttl_days: int = 7
+    # Override when the public callback differs from APP_BASE_URL (e.g. a Vercel rewrite).
+    oauth_callback_url: str = ""
 
     sentry_dsn: str = ""
     # Linked from `/reviewpilot help` replies.
@@ -89,8 +99,6 @@ class Settings(ReviewSettings):
         missing = [
             name.upper() for name in REQUIRED_OUTSIDE_TESTS if not _is_set(getattr(self, name))
         ]
-        if not (self.github_app_client_id or self.github_app_id):
-            missing.append("GITHUB_APP_CLIENT_ID (or GITHUB_APP_ID)")
         # The worker reviews with the LLM (Phase 3+): fail at startup, not on the first PR.
         if self.llm_provider != "fake":
             if not self.llm_model:
@@ -102,7 +110,26 @@ class Settings(ReviewSettings):
         if self.github_app_private_key_b64.get_secret_value():
             # Decode now so a bad key fails at startup, not on the first webhook.
             _ = self.github_app_private_key_pem
+        if len(self.session_secret.get_secret_value()) < MIN_SESSION_SECRET_LENGTH:
+            raise ValueError(
+                f"SESSION_SECRET must be at least {MIN_SESSION_SECRET_LENGTH} characters"
+            )
+        try:
+            Fernet(self.encryption_key.get_secret_value().encode())
+        except (ValueError, TypeError) as exc:
+            raise ValueError("ENCRYPTION_KEY is not a valid Fernet key") from exc
         return self
+
+    @property
+    def oauth_redirect_uri(self) -> str:
+        """Where GitHub sends users back after login; must match the App's callback URL."""
+        return self.oauth_callback_url or f"{self.app_base_url}/api/v1/auth/github/callback"
+
+    @property
+    def secure_cookies(self) -> bool:
+        # Browsers treat http://localhost as a secure context, but plain-http staging
+        # hosts would silently drop Secure cookies; so: Secure whenever we serve https.
+        return self.app_env == "production" or self.app_base_url.startswith("https://")
 
     @property
     def bot_login(self) -> str:

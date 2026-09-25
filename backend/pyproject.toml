@@ -17,6 +17,7 @@ dependencies = [
     "httpx>=0.28",
     "pyjwt[crypto]>=2.10",
     "pyyaml>=6.0",
+    "cryptography>=45",
 ]
 
 [dependency-groups]

@@ -15,6 +15,7 @@ from app.services.webhook_router import ReviewJob
 FIXTURES = Path(__file__).parent / "fixtures"
 WEBHOOK_SECRET = "test-webhook-secret"
 BOT_LOGIN = "reviewpilot-test[bot]"
+TEST_FERNET_KEY = "Hgl4Jz2Xuv7w5Xc4h8QKZg3VJvG1H8m1nX2ycZ3Y0zE="
 
 
 def load_webhook(name: str) -> dict[str, Any]:
