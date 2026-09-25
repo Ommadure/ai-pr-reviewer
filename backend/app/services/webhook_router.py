@@ -13,13 +13,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.github import events
 from app.repositories import installations, pull_requests, repo_configs, repos, review_runs
+from app.services.commands import CommandJob, parse_command
 from app.services.installations import ensure_repository, sync_installation
 
 DeliveryStatus = Literal["processed", "queued", "ignored"]
-# Every push reviews again; fingerprints stop old comments being repeated.
-# Phase 4 makes "synchronize" review only the new commits (incremental mode).
 REVIEW_TRIGGER_ACTIONS = {"opened", "reopened", "ready_for_review", "synchronize"}
-COMMAND_PREFIX = "/reviewpilot"
 
 
 @dataclass(frozen=True)
@@ -33,7 +31,7 @@ class ReviewJob:
 class RouteOutcome:
     status: DeliveryStatus
     ignore_reason: str | None = None
-    jobs: list[ReviewJob] = field(default_factory=list)
+    jobs: list[ReviewJob | CommandJob] = field(default_factory=list)
 
 
 def processed() -> RouteOutcome:
@@ -135,7 +133,9 @@ async def handle_pull_request(session: AsyncSession, payload: dict[str, Any]) ->
         session,
         pull_request_id=pr.id,
         trigger=event.action,
-        mode="full",
+        # A push reviews only the new commits; the worker falls back to a full review
+        # (and records why) if there's no previous review or history was rewritten.
+        mode="incremental" if event.action == "synchronize" else "full",
         base_sha=pr.base_sha,
         head_sha=pr.head_sha,
     )
@@ -158,9 +158,22 @@ async def handle_issue_comment(session: AsyncSession, payload: dict[str, Any]) -
     event = events.IssueCommentEvent.model_validate(payload)
     if event.action != "created" or event.issue.pull_request is None:
         return ignored("not_a_pr_comment")
-    if not event.comment.body.lstrip().startswith(COMMAND_PREFIX):
+    command = parse_command(event.comment.body)
+    if command is None:
         return ignored("not_a_command")
-    return ignored("commands_not_implemented")  # Phase 4
+    # Only record and queue here: permission checks and replies need GitHub calls,
+    # which never happen inside the webhook request.
+    repository_id = await ensure_repository(session, event.installation.id, event.repository)
+    job = CommandJob(
+        installation_id=event.installation.id,
+        repository_id=repository_id,
+        repo_full_name=event.repository.full_name,
+        pr_number=event.issue.number,
+        comment_id=event.comment.id,
+        author=event.comment.user.login,
+        command=command,
+    )
+    return RouteOutcome("queued", jobs=[job])
 
 
 HANDLERS: dict[str, Handler] = {

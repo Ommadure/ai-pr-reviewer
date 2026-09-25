@@ -9,6 +9,7 @@ from uuid import uuid4
 import httpx
 
 from app.github.signatures import compute_signature
+from app.services.commands import CommandJob
 from app.services.webhook_router import ReviewJob
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -50,9 +51,13 @@ class RecordingDispatcher:
 
     def __init__(self) -> None:
         self.jobs: list[ReviewJob] = []
+        self.commands: list[CommandJob] = []
 
     def enqueue_review(self, job: ReviewJob) -> None:
         self.jobs.append(job)
+
+    def enqueue_command(self, job: CommandJob) -> None:
+        self.commands.append(job)
 
 
 class InMemoryTokenCache:

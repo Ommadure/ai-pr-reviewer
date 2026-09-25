@@ -7,7 +7,13 @@ from collections import Counter
 from collections.abc import Sequence
 
 from app.github.client import CheckRunOutput, Conclusion, ReviewCommentInput
-from app.review.models import SEVERITY_RANK, ReviewComment, ReviewResult, Severity
+from app.review.models import (
+    SEVERITY_RANK,
+    PRSummaryOutput,
+    ReviewComment,
+    ReviewResult,
+    Severity,
+)
 from app.review.sanitizer import CATEGORY_LABEL, render_comment_body, sanitize_markdown
 
 CHECK_RUN_NAME = "ReviewPilot"
@@ -45,6 +51,31 @@ def check_title(comments: Sequence[ReviewComment]) -> str:
     return f"{len(comments)} {noun}: {severity_counts(comments)}"
 
 
+def summary_markdown(summary: PRSummaryOutput, *, head_sha: str) -> str:
+    """A stored PR summary, re-posted by `/reviewpilot summary`."""
+    parts = [
+        f"### 🤖 ReviewPilot summary (as of `{head_sha[:7]}`)",
+        sanitize_markdown(summary.overview),
+        f"**Risk:** {summary.risk_level}",
+    ]
+    parts += _summary_lists(summary)
+    return _truncate("\n\n".join(parts))
+
+
+def _summary_lists(summary: PRSummaryOutput) -> list[str]:
+    parts = []
+    if summary.key_changes:
+        parts.append(
+            "**Key changes**\n"
+            + "\n".join(f"- {sanitize_markdown(c)}" for c in summary.key_changes[:6])
+        )
+    if summary.notes:
+        parts.append(
+            "**Notes**\n" + "\n".join(f"- {sanitize_markdown(n)}" for n in summary.notes[:4])
+        )
+    return parts
+
+
 def review_body(result: ReviewResult, *, config_warnings: Sequence[str] = ()) -> str:
     """The top-level review text: the PR summary plus anything the reader should know."""
     parts = ["### 🤖 ReviewPilot review"]
@@ -53,15 +84,7 @@ def review_body(result: ReviewResult, *, config_warnings: Sequence[str] = ()) ->
         parts.append(sanitize_markdown(summary.overview))
         issues = severity_counts(result.comments) or "none"
         parts.append(f"**Risk:** {summary.risk_level} · **Issues:** {issues}")
-        if summary.key_changes:
-            parts.append(
-                "**Key changes**\n"
-                + "\n".join(f"- {sanitize_markdown(c)}" for c in summary.key_changes[:6])
-            )
-        if summary.notes:
-            parts.append(
-                "**Notes**\n" + "\n".join(f"- {sanitize_markdown(n)}" for n in summary.notes[:4])
-            )
+        parts += _summary_lists(summary)
     elif result.comments:
         parts.append(f"**Issues:** {severity_counts(result.comments)}")
     else:

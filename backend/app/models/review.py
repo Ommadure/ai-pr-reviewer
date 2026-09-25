@@ -68,7 +68,9 @@ class ReviewRun(IdMixin, TimestampMixin, Base):
     mode: Mapped[str] = mapped_column(String(16))  # full | incremental
     base_sha: Mapped[str] = mapped_column(String(40))
     head_sha: Mapped[str] = mapped_column(String(40))
-    from_sha: Mapped[str | None] = mapped_column(String(40))  # incremental start (Phase 4)
+    from_sha: Mapped[str | None] = mapped_column(String(40))  # incremental start
+    # Why a run asked to be incremental ran in full: no_previous_review | history_rewritten
+    mode_reason: Mapped[str | None] = mapped_column(String(64))
     # queued | running | completed | failed | superseded | skipped
     status: Mapped[str] = mapped_column(String(16))
     skip_reason: Mapped[str | None] = mapped_column(String(64))
@@ -92,6 +94,8 @@ class ReviewRun(IdMixin, TimestampMixin, Base):
     cost_usd: Mapped[Decimal] = mapped_column(Money, server_default="0")
     latency_ms: Mapped[int | None] = mapped_column(Integer)
 
+    # PRSummaryOutput as JSON, so `/reviewpilot summary` can re-post it without an LLM call.
+    summary: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     github_review_id: Mapped[int | None] = mapped_column(BigInteger)
     check_run_id: Mapped[int | None] = mapped_column(BigInteger)
     error_code: Mapped[str | None] = mapped_column(String(64))

@@ -42,3 +42,14 @@ async def get_with_repository(session: AsyncSession, pull_request_id: int) -> Pu
         .options(joinedload(PullRequest.repository).joinedload(Repository.installation))
     )
     return result.one_or_none()
+
+
+async def get_by_number(
+    session: AsyncSession, repository_id: int, number: int
+) -> PullRequest | None:
+    result = await session.scalars(
+        select(PullRequest).where(
+            PullRequest.repository_id == repository_id, PullRequest.number == number
+        )
+    )
+    return result.one_or_none()

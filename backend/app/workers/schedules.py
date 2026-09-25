@@ -13,5 +13,8 @@ BEAT_SCHEDULE: dict[str, dict[str, Any]] = {
         "task": "app.workers.tasks.cleanup_webhook_deliveries",
         "schedule": crontab(hour=3, minute=17),  # daily, off the top of the hour
     },
-    # poll_feedback (every 30 min) arrives in Phase 4.
+    "poll-feedback": {
+        "task": "app.workers.tasks.poll_feedback",
+        "schedule": 30 * 60,
+    },
 }

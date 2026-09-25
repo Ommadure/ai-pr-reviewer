@@ -84,6 +84,10 @@ flowchart LR
 | Config from default branch, cached per commit | `app/services/config_loader.py` | ✅ Phase 3 |
 | Review history tables: review_runs, llm_calls, review_comments, repo_configs | `app/models/review.py` | ✅ Phase 3 |
 | Beat: mark_stuck_runs (10 min), cleanup_webhook_deliveries (daily) | `app/workers/` | ✅ Phase 3 |
+| Incremental reviews on push, force-push fallback, PR-diff intersection | `app/review/incremental.py`, orchestrator `_plan_diff` | ✅ Phase 4 |
+| Addressed / outdated detection | `app/review/incremental.py` | ✅ Phase 4 |
+| Slash commands (permissions, rate limit, 👀 + reply) | `app/services/commands.py` | ✅ Phase 4 |
+| Reaction polling (beat, 30 min) and usefulness metrics | `app/services/feedback.py`, `app/services/analytics.py` | ✅ Phase 4 |
 | Review engine (parse, filter, redact, prioritise, chunk, LLM, validate, dedupe, summarise) | `app/review/`, `app/config/repo_config.py` | ✅ Phase 2 |
 | Gemini provider + fake provider | `app/review/llm/` | ✅ Phase 2 |
 | CLI | `python -m app.review.cli change.patch` | ✅ Phase 2 |

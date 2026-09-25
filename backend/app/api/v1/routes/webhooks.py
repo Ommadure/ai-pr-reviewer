@@ -17,6 +17,7 @@ from app.core.config import Settings, get_settings
 from app.db.session import get_session
 from app.github.signatures import is_valid_signature
 from app.repositories import deliveries
+from app.services.commands import CommandJob
 from app.services.dispatch import ReviewDispatcher, get_review_dispatcher
 from app.services.webhook_router import route_event
 
@@ -88,7 +89,10 @@ async def github_webhook(
     try:
         for job in outcome.jobs:
             # Publishing to Redis is blocking I/O; keep it off the event loop.
-            await run_in_threadpool(dispatcher.enqueue_review, job)
+            if isinstance(job, CommandJob):
+                await run_in_threadpool(dispatcher.enqueue_command, job)
+            else:
+                await run_in_threadpool(dispatcher.enqueue_review, job)
     except Exception as exc:
         await deliveries.set_status(session, delivery_id, "failed", error="enqueue_failed")
         await session.commit()

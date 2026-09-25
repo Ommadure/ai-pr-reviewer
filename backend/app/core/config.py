@@ -79,6 +79,8 @@ class Settings(ReviewSettings):
     encryption_key: SecretStr = SecretStr("")
 
     sentry_dsn: str = ""
+    # Linked from `/reviewpilot help` replies.
+    docs_url: str = "https://github.com/Ommadure/ai-pr-reviewer#configuration"
 
     @model_validator(mode="after")
     def _fail_fast_on_missing_values(self) -> Self:
