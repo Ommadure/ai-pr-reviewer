@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.models import LLMCall, PullRequest, Repository, ReviewCommentRecord, ReviewRun
+from app.review.incremental import CommentStatus, OpenComment
 from app.review.models import LLMCallRecord
 
 ACTIVE_STATUSES = ("queued", "running")
@@ -113,3 +114,52 @@ def llm_call_rows(run_id: int, records: Sequence[LLMCallRecord]) -> list[LLMCall
         )
         for record in records
     ]
+
+
+async def open_posted_comments(session: AsyncSession, pull_request_id: int) -> list[OpenComment]:
+    rows = await session.execute(
+        select(
+            ReviewCommentRecord.id,
+            ReviewCommentRecord.path,
+            ReviewCommentRecord.line,
+            ReviewCommentRecord.start_line,
+            ReviewCommentRecord.code_snapshot,
+            ReviewRun.head_sha,
+        )
+        .join(ReviewRun, ReviewRun.id == ReviewCommentRecord.review_run_id)
+        .where(
+            ReviewCommentRecord.pull_request_id == pull_request_id,
+            ReviewCommentRecord.posted.is_(True),
+            ReviewCommentRecord.status == "open",
+        )
+    )
+    return [
+        OpenComment(
+            row.id, row.path, row.line, row.start_line, row.code_snapshot or "", row.head_sha
+        )
+        for row in rows
+    ]
+
+
+async def set_comment_statuses(session: AsyncSession, changes: dict[int, CommentStatus]) -> None:
+    for comment_id, status in changes.items():
+        await session.execute(
+            update(ReviewCommentRecord)
+            .where(ReviewCommentRecord.id == comment_id)
+            .values(status=status, updated_at=func.now())
+        )
+
+
+async def latest_summary(session: AsyncSession, pull_request_id: int) -> ReviewRun | None:
+    """The most recent completed run that produced a PR summary."""
+    result = await session.scalars(
+        select(ReviewRun)
+        .where(
+            ReviewRun.pull_request_id == pull_request_id,
+            ReviewRun.status == "completed",
+            ReviewRun.summary.is_not(None),
+        )
+        .order_by(ReviewRun.finished_at.desc())
+        .limit(1)
+    )
+    return result.one_or_none()

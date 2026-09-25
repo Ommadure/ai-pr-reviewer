@@ -2,11 +2,15 @@
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import structlog
 from celery import Task
 
+from app.github.client import GitHubError, GitHubRateLimited
 from app.repositories import deliveries, review_runs
+from app.services.commands import CommandJob, handle_command
+from app.services.feedback import poll_feedback as poll_feedback_service
 from app.services.orchestrator import (
     RetryableReviewError,
     ReviewBusy,
@@ -87,3 +91,38 @@ async def _cleanup_webhook_deliveries() -> int:
         await session.commit()
     log.info("maintenance.deliveries_deleted", count=count)
     return count
+
+
+@celery_app.task(name="app.workers.tasks.handle_pr_command", bind=True, max_retries=3)
+def handle_pr_command(self: Task, job: dict[str, Any]) -> str:
+    command = CommandJob(**job)
+    try:
+        outcome = asyncio.run(_handle_command(command))
+    except GitHubRateLimited as exc:
+        raise self.retry(exc=exc, countdown=exc.retry_after) from exc
+    except GitHubError as exc:
+        if exc.status_code < 500:
+            raise
+        raise self.retry(exc=exc, countdown=15 * 2**self.request.retries) from exc
+    log.info("command.finished", command=command.command, outcome=outcome, pr=command.pr_number)
+    return outcome
+
+
+async def _handle_command(job: CommandJob) -> str:
+    async with worker_context() as ctx:
+        deps = ctx.command_deps(enqueue_review=lambda run_id: review_pull_request.delay(run_id))
+        return await handle_command(deps, job)
+
+
+@celery_app.task(name="app.workers.tasks.poll_feedback")
+def poll_feedback() -> int:
+    """Refresh 👍/👎 counts on posted comments (beat: every 30 min)."""
+    return asyncio.run(_poll_feedback())
+
+
+async def _poll_feedback() -> int:
+    async with worker_context() as ctx:
+        result = await poll_feedback_service(
+            ctx.sessionmaker, ctx.github_auth, now=datetime.now(UTC)
+        )
+    return result.checked

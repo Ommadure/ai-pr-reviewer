@@ -294,12 +294,45 @@ async def test_merged_pull_request_state(api: httpx.AsyncClient, sessionmaker: S
 # ---- other events ----
 
 
-async def test_slash_command_is_recognised_but_not_yet_handled(
-    api: httpx.AsyncClient, sessionmaker: Sessions
+async def test_slash_command_is_queued_for_the_worker(
+    api: httpx.AsyncClient, sessionmaker: Sessions, dispatcher: RecordingDispatcher
 ) -> None:
-    await send_webhook(api, "issue_comment", load_webhook("issue_comment_created"), delivery_id="c")
-    delivery = await _delivery(sessionmaker, "c")
-    assert delivery is not None and delivery.ignore_reason == "commands_not_implemented"
+    response = await send_webhook(
+        api, "issue_comment", load_webhook("issue_comment_created"), delivery_id="c"
+    )
+    assert response.json() == {"status": "queued"}
+    [job] = dispatcher.commands
+    [repo] = await _all(sessionmaker, Repository)
+    assert (job.command, job.pr_number, job.comment_id, job.author) == (
+        "review",
+        1,
+        5001,
+        "octocat",
+    )
+    assert (job.repository_id, job.repo_full_name, job.installation_id) == (
+        repo.id,
+        "octocat/playground",
+        4001,
+    )
+
+
+@pytest.mark.parametrize(
+    ("body", "reason"),
+    [("Looks good to me!", "not_a_command"), ("please /reviewpilot review", "not_a_command")],
+)
+async def test_ordinary_comments_are_ignored(
+    api: httpx.AsyncClient,
+    sessionmaker: Sessions,
+    dispatcher: RecordingDispatcher,
+    body: str,
+    reason: str,
+) -> None:
+    payload = load_webhook("issue_comment_created")
+    payload["comment"]["body"] = body
+    await send_webhook(api, "issue_comment", payload, delivery_id="plain")
+    delivery = await _delivery(sessionmaker, "plain")
+    assert delivery is not None and delivery.ignore_reason == reason
+    assert dispatcher.commands == []
 
 
 async def test_unknown_events_are_recorded_as_ignored(

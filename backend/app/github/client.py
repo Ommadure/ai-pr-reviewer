@@ -145,6 +145,30 @@ class PullRequestInfo(BaseModel):
         )
 
 
+class CompareResult(BaseModel):
+    # "ahead": head is base plus new commits. "diverged" / "behind": history was
+    # rewritten (force push, rebase), so base...head is not "what's new".
+    status: str
+    ahead_by: int = 0
+    behind_by: int = 0
+    files: list[PullRequestFile] = []
+
+
+class Reaction(BaseModel):
+    content: str  # "+1", "-1", "laugh", "confused", "heart", "hooray", "rocket", "eyes"
+    user_login: str
+    user_type: str
+
+    @classmethod
+    def from_api(cls, data: dict[str, Any]) -> "Reaction":
+        user = data.get("user") or {}
+        return cls(
+            content=data["content"],
+            user_login=str(user.get("login", "")),
+            user_type=str(user.get("type", "")),
+        )
+
+
 class PostedComment(BaseModel):
     id: int
     path: str
@@ -376,3 +400,37 @@ class GitHubClient:
             "POST", f"/repos/{owner}/{repo}/issues/{number}/comments", json={"body": body}
         )
         return int(response.json()["id"])
+
+    async def compare_commits(self, owner: str, repo: str, base: str, head: str) -> CompareResult:
+        # Returns at most 300 files; plenty for "what changed since the last review".
+        response = await self.request("GET", f"/repos/{owner}/{repo}/compare/{base}...{head}")
+        return CompareResult.model_validate(response.json())
+
+    async def get_collaborator_role(self, owner: str, repo: str, username: str) -> str:
+        """admin | maintain | write | triage | read | none."""
+        try:
+            response = await self.request(
+                "GET", f"/repos/{owner}/{repo}/collaborators/{username}/permission"
+            )
+        except GitHubError as exc:
+            if exc.status_code == 404:  # not a collaborator at all
+                return "none"
+            raise
+        data = response.json()
+        # role_name distinguishes maintain/triage; permission is the legacy coarse value.
+        return str(data.get("role_name") or data.get("permission") or "none")
+
+    async def add_issue_comment_reaction(
+        self, owner: str, repo: str, comment_id: int, content: str
+    ) -> None:
+        await self.request(
+            "POST",
+            f"/repos/{owner}/{repo}/issues/comments/{comment_id}/reactions",
+            json={"content": content},
+        )
+
+    async def list_review_comment_reactions(
+        self, owner: str, repo: str, comment_id: int
+    ) -> list[Reaction]:
+        items = await self.paginate(f"/repos/{owner}/{repo}/pulls/comments/{comment_id}/reactions")
+        return [Reaction.from_api(item) for item in items]

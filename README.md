@@ -2,7 +2,7 @@
 
 A GitHub App that reviews pull requests with an LLM. It posts validated inline comments on the exact changed lines, and a React dashboard tracks review history, cost, and how useful the comments are.
 
-> 🚧 In progress: **Phase 3**: real AI reviews on GitHub. The full README (demo, eval results, metrics) comes in Phase 7.
+> 🚧 In progress: **Phase 4**: incremental reviews, slash commands, feedback. The full README (demo, eval results, metrics) comes in Phase 7.
 
 ## Local setup
 
@@ -31,6 +31,51 @@ uv run python -m app.review.cli /tmp/change.patch                    # uses LLM_
 uv run python -m app.review.cli /tmp/change.patch --provider fake    # offline, no API key
 ```
 
+## Slash commands
+
+Comment on a pull request:
+
+| Command | What it does | Who |
+|---|---|---|
+| `/reviewpilot review` | Full re-review of the latest commit (max 5 per PR per hour) | write, maintain, admin |
+| `/reviewpilot summary` | Re-post the latest PR summary | anyone |
+| `/reviewpilot pause` | Stop automatic reviews on this PR | write, maintain, admin |
+| `/reviewpilot resume` | Turn automatic reviews back on | write, maintain, admin |
+| `/reviewpilot help` | List the commands | anyone |
+
+ReviewPilot reacts with 👀 immediately and replies with the outcome.
+
+## Configuration
+
+Put `.reviewpilot.yml` on the repository's **default branch** (it's never read from PR branches; see [ADR 0009](docs/adr/0009-config-from-default-branch.md)). All keys are optional:
+
+```yaml
+version: 1
+enabled: true                # false = skip this repository
+review_drafts: false
+post_when_clean: false       # post a summary even when there are no comments
+comment_on_context_lines: false
+min_severity: low            # critical | high | medium | low | info
+min_confidence: 0.6
+max_comments: 15
+focus: []                    # e.g. [bug, security]; empty = every category
+ignore_paths: ["docs/**", "**/*.generated.ts"]
+custom_rules:                # up to 20 rules, 300 characters each
+  - "We use Pydantic v2; flag v1-style validators."
+summary_language: en
+```
+
+## How usefulness is measured
+
+ReviewPilot polls 👍/👎 reactions on its comments every 30 minutes (bot reactions don't count) and notices when an author changes the code a comment flagged.
+
+- **Posted:** comments actually posted on GitHub (dropped comments don't count).
+- **Helpful:** posted comments with at least one 👍, *or* whose flagged code the author later changed ("addressed").
+- **Negative:** posted comments with at least one 👎.
+- **Helpful rate** = helpful ÷ posted. **Negative rate** = negative ÷ posted.
+
+A comment with mixed reactions counts in both, so the two rates don't add up to 100%. Both are also reported by category and by severity.
+
 ## Docs
 - [GitHub App setup](docs/github-app-setup.md)
 - [Architecture](docs/architecture.md)
@@ -45,3 +90,4 @@ uv run python -m app.review.cli /tmp/change.patch --provider fake    # offline, 
   - [0008 Comment fingerprints](docs/adr/0008-comment-fingerprints.md)
   - [0009 Config from the default branch](docs/adr/0009-config-from-default-branch.md)
   - [0010 Review-run lifecycle and idempotency](docs/adr/0010-review-run-lifecycle.md)
+  - [0011 Incremental reviews](docs/adr/0011-incremental-reviews.md)

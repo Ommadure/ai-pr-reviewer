@@ -38,6 +38,7 @@ from app.models import PullRequest, ReviewCommentRecord, ReviewRun
 from app.repositories import review_runs
 from app.review.diff_parser import parse_patch
 from app.review.engine import run_review
+from app.review.incremental import CommentStatus, detect_status_changes, restrict_to_pr_diff
 from app.review.llm.base import LLMProvider
 from app.review.models import (
     DroppedComment,
@@ -47,6 +48,7 @@ from app.review.models import (
     ReviewBudget,
     ReviewComment,
     ReviewResult,
+    SkippedFile,
 )
 from app.review.pricing import PriceTable
 from app.review.prompt_builder import DEFAULT_PROMPT_VERSION
@@ -154,6 +156,7 @@ async def _execute_locked(deps: ReviewDeps, run_id: int, *, final_attempt: bool)
         pr_id, pr_number, head_sha = pr.id, pr.number, run.head_sha
         default_branch = repository.default_branch or pr.base_ref
         existing_check_run = run.check_run_id
+        requested_mode, last_reviewed = run.mode, pr.last_reviewed_sha
 
     owner, name = repository.owner_and_name
     github = deps.github_auth.installation_client(installation_id)
@@ -177,6 +180,29 @@ async def _execute_locked(deps: ReviewDeps, run_id: int, *, final_attempt: bool)
         if live.draft and not config.review_drafts:
             return await _finish_by_id(deps, run_id, "skipped", "draft")
 
+        pr_files = _to_file_diffs(await github.list_pull_request_files(owner, name, pr_number))
+        plan = await _plan_diff(
+            deps,
+            github,
+            owner,
+            name,
+            pr_id,
+            pr_files,
+            requested_mode=requested_mode,
+            last_reviewed=last_reviewed,
+            head_sha=head_sha,
+        )
+        if plan.nothing_new:
+            return await _finish_by_id(deps, run_id, "skipped", "no_new_changes")
+        await _update_run(
+            deps, run_id, mode=plan.mode, mode_reason=plan.mode_reason, from_sha=plan.from_sha
+        )
+        if plan.status_changes:
+            async with deps.sessionmaker() as session:
+                await review_runs.set_comment_statuses(session, plan.status_changes)
+                await session.commit()
+            logger.info("review.comments_resolved", changes=len(plan.status_changes))
+
         if check_run_id is None:
             check_run_id = await github.create_check_run(
                 owner,
@@ -189,11 +215,10 @@ async def _execute_locked(deps: ReviewDeps, run_id: int, *, final_attempt: bool)
             )
             await _update_run(deps, run_id, check_run_id=check_run_id)
 
-        files = _to_file_diffs(await github.list_pull_request_files(owner, name, pr_number))
         async with deps.sessionmaker() as session:
             already_posted = await review_runs.posted_fingerprints(session, pr_id)
         result = await run_review(
-            files,
+            plan.files,
             config,
             _pr_context(live, repository.full_name),
             deps.llm,
@@ -204,6 +229,7 @@ async def _execute_locked(deps: ReviewDeps, run_id: int, *, final_attempt: bool)
             existing_fingerprints=already_posted,
             prompt_version=deps.prompt_version,
         )
+        result.skipped_files.extend(plan.skipped)
 
         if await _current_head(deps, pr_id) != head_sha:
             # A push landed while we were thinking: comments would point at old code.
@@ -271,6 +297,11 @@ async def _execute_locked(deps: ReviewDeps, run_id: int, *, final_attempt: bool)
         retryable = _retryable(exc)
         if retryable is not None and not final_attempt:
             # Leave the check run open and the run re-queued; the task retries the whole run.
+            if result is not None:
+                # This attempt's LLM calls were billed even though we'll redo them.
+                async with deps.sessionmaker() as session:
+                    session.add_all(review_runs.llm_call_rows(run_id, result.llm_calls))
+                    await session.commit()
             await _update_run(deps, run_id, status="queued", error_message=f"retrying: {exc}"[:500])
             logger.warning("review.retrying", error=str(exc)[:200])
             raise retryable from exc
@@ -394,6 +425,65 @@ def _failure_output(code: str) -> CheckRunOutput:
     )
 
 
+# ---- incremental diff planning ----
+
+
+@dataclass
+class _DiffPlan:
+    files: list[FileDiff]
+    mode: str = "full"
+    mode_reason: str | None = None
+    from_sha: str | None = None
+    skipped: list[SkippedFile] = field(default_factory=list)
+    status_changes: dict[int, CommentStatus] = field(default_factory=dict)
+    nothing_new: bool = False
+
+
+async def _plan_diff(
+    deps: ReviewDeps,
+    github: GitHubClient,
+    owner: str,
+    name: str,
+    pr_id: int,
+    pr_files: list[FileDiff],
+    *,
+    requested_mode: str,
+    last_reviewed: str | None,
+    head_sha: str,
+) -> _DiffPlan:
+    """What to review: the whole PR, or only the commits since the last review."""
+    if requested_mode != "incremental":
+        return _DiffPlan(pr_files)
+    if not last_reviewed:
+        return _DiffPlan(pr_files, mode_reason="no_previous_review")
+    if last_reviewed == head_sha:
+        return _DiffPlan([], nothing_new=True)
+    try:
+        compare = await github.compare_commits(owner, name, last_reviewed, head_sha)
+    except GitHubError as exc:
+        if exc.status_code != 404:
+            raise
+        # The last reviewed commit no longer exists (force push + garbage collection).
+        return _DiffPlan(pr_files, mode_reason="history_rewritten")
+    if compare.status == "identical":
+        return _DiffPlan([], nothing_new=True)
+    if compare.status != "ahead":
+        # diverged/behind: history was rewritten, so last...head isn't "what's new".
+        return _DiffPlan(pr_files, mode_reason="history_rewritten")
+
+    changed = _to_file_diffs(compare.files)
+    files, skipped = restrict_to_pr_diff(changed, pr_files)
+    async with deps.sessionmaker() as session:
+        open_comments = await review_runs.open_posted_comments(session, pr_id)
+    return _DiffPlan(
+        files,
+        mode="incremental",
+        from_sha=last_reviewed,
+        skipped=skipped,
+        status_changes=detect_status_changes(open_comments, changed, base_sha=last_reviewed),
+    )
+
+
 # ---- persistence ----
 
 
@@ -427,6 +517,7 @@ async def _save_result(
         run.input_tokens, run.output_tokens = result.input_tokens, result.output_tokens
         run.cost_usd = review_runs.to_money(result.cost_usd)
         run.github_review_id = posting.review_id
+        run.summary = result.summary.model_dump() if result.summary else None
         if error:
             run.error_code, run.error_message = error[0], error[1][:2000]
         elif result.errors:

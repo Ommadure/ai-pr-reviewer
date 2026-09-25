@@ -7,7 +7,7 @@ builds its own engine, Redis client and HTTP clients, and closes them before
 the loop ends.
 """
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 
@@ -21,6 +21,7 @@ from app.core.config import Settings, get_settings
 from app.github.app_auth import GitHubAppAuth, RedisTokenCache
 from app.github.client import create_http_client
 from app.review.llm.factory import build_provider, price_table, review_budget, review_model
+from app.services.commands import CommandDeps
 from app.services.orchestrator import ReviewDeps
 
 # Longer than the task's hard time limit (300 s), so a lock can't expire under a live
@@ -48,6 +49,19 @@ class RedisPRLock:
                     await lock.release()
 
 
+class RedisRateLimiter:
+    """Fixed-window counter: INCR a key, give it a TTL on first use."""
+
+    def __init__(self, redis: Redis) -> None:
+        self._redis = redis
+
+    async def hit(self, key: str, *, limit: int, window_seconds: int) -> bool:
+        count = int(await self._redis.incr(key))
+        if count == 1:
+            await self._redis.expire(key, window_seconds)
+        return count <= limit
+
+
 @dataclass(frozen=True)
 class WorkerContext:
     settings: Settings
@@ -66,6 +80,15 @@ class WorkerContext:
             lock=RedisPRLock(self.redis),
             budget=review_budget(self.settings),
             prices=price_table(self.settings),
+        )
+
+    def command_deps(self, enqueue_review: Callable[[int], None]) -> CommandDeps:
+        return CommandDeps(
+            sessionmaker=self.sessionmaker,
+            github_auth=self.github_auth,
+            rate_limiter=RedisRateLimiter(self.redis),
+            enqueue_review=enqueue_review,
+            docs_url=self.settings.docs_url,
         )
 
 
