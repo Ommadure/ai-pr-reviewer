@@ -1,0 +1,12 @@
+id: ts-missing-await-01
+language: typescript
+description: Profile route checks a Promise instead of the user
+title: Add public profile endpoint
+planted_bugs:
+- path: src/routes/profile.ts
+  lines:
+  - 7
+  - 7
+  category: bug
+  severity: high
+  description: 'getUser is async: the Promise is always truthy and user.name is undefined'

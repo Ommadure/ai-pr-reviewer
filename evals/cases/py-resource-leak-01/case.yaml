@@ -1,0 +1,14 @@
+id: py-resource-leak-01
+language: python
+description: SQLite connection opened per call and never closed
+title: Audit log
+planted_bugs:
+- path: app/audit/log.py
+  lines:
+  - 7
+  - 7
+  category: bug
+  severity: medium
+  description: 'Connection is never closed: one leaked handle per audited request'
+  accept_categories:
+  - performance

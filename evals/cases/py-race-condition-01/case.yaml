@@ -1,0 +1,14 @@
+id: py-race-condition-01
+language: python
+description: Check-then-act withdrawal without a lock
+title: Wallet withdrawals
+planted_bugs:
+- path: app/wallet/service.py
+  lines:
+  - 10
+  - 13
+  category: bug
+  severity: critical
+  description: 'Read-check-write race: two concurrent withdrawals can both pass the check (double spend)'
+  accept_categories:
+  - security

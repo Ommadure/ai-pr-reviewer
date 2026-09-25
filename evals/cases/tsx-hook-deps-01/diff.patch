@@ -1,0 +1,22 @@
+diff --git a/src/components/OrderHistory.tsx b/src/components/OrderHistory.tsx
+--- a/src/components/OrderHistory.tsx
++++ b/src/components/OrderHistory.tsx
+@@ -1,2 +1,18 @@
+ import { useEffect, useState } from "react";
+ import { fetchOrders, type Order } from "../api";
++
++export function OrderHistory({ userId }: { userId: string }) {
++  const [orders, setOrders] = useState<Order[]>([]);
++
++  useEffect(() => {
++    fetchOrders(userId).then(setOrders);
++  }, []);
++
++  return (
++    <ul>
++      {orders.map((o) => (
++        <li key={o.id}>{o.summary}</li>
++      ))}
++    </ul>
++  );
++}

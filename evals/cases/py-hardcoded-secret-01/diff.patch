@@ -1,0 +1,11 @@
+diff --git a/app/billing/settings.py b/app/billing/settings.py
+--- a/app/billing/settings.py
++++ b/app/billing/settings.py
+@@ -2,3 +2,7 @@
+ 
+ BILLING_CURRENCY = "INR"
+ INVOICE_PREFIX = "INV"
++
++# Billing has its own database since the split.
++BILLING_DB_URL = "postgresql://billing:Pr0d-B1ll1ng-2031@billing-db.internal:5432/billing"
++BILLING_DB_POOL_SIZE = int(os.environ.get("BILLING_DB_POOL_SIZE", "10"))

@@ -1,0 +1,13 @@
+diff --git a/db/scripts/2031_07_expire_trials.sql b/db/scripts/2031_07_expire_trials.sql
+new file mode 100644
+--- /dev/null
++++ b/db/scripts/2031_07_expire_trials.sql
+@@ -0,0 +1,8 @@
++-- Expire trials that ended more than 7 days ago.
++BEGIN;
++
++UPDATE subscriptions
++SET status = 'cancelled',
++    cancelled_at = NOW();
++
++COMMIT;

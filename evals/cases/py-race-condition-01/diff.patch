@@ -1,0 +1,16 @@
+diff --git a/app/wallet/service.py b/app/wallet/service.py
+--- a/app/wallet/service.py
++++ b/app/wallet/service.py
+@@ -3,3 +3,12 @@
+ 
+ class InsufficientFunds(Exception):
+     pass
++
++
++def withdraw(account_id: str, amount: int) -> int:
++    """Called from many web workers at once."""
++    balance = get_balance(account_id)
++    if balance < amount:
++        raise InsufficientFunds(account_id)
++    set_balance(account_id, balance - amount)
++    return balance - amount

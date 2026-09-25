@@ -1,0 +1,12 @@
+id: py-mutable-default-01
+language: python
+description: Mutable default argument shared between calls
+title: Filter builder helper
+planted_bugs:
+- path: app/search/filters.py
+  lines:
+  - 10
+  - 10
+  category: bug
+  severity: medium
+  description: Default list is shared across calls, so filters leak between requests

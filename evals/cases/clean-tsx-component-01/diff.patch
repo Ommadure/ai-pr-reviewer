@@ -1,0 +1,38 @@
+diff --git a/src/components/TeamList.tsx b/src/components/TeamList.tsx
+new file mode 100644
+--- /dev/null
++++ b/src/components/TeamList.tsx
+@@ -0,0 +1,33 @@
++import { useEffect, useState } from "react";
++import { fetchTeam, type Member } from "../api";
++
++export function TeamList({ teamId }: { teamId: string }) {
++  const [members, setMembers] = useState<Member[] | null>(null);
++  const [error, setError] = useState<string | null>(null);
++
++  useEffect(() => {
++    let cancelled = false;
++    setMembers(null);
++    setError(null);
++    fetchTeam(teamId)
++      .then((team) => {
++        if (!cancelled) setMembers(team.members);
++      })
++      .catch(() => {
++        if (!cancelled) setError("Couldn't load the team.");
++      });
++    return () => {
++      cancelled = true;
++    };
++  }, [teamId]);
++
++  if (error) return <p role="alert">{error}</p>;
++  if (!members) return <p aria-busy="true">Loading team…</p>;
++  return (
++    <ul aria-label="Team members">
++      {members.map((m) => (
++        <li key={m.id}>{m.name}</li>
++      ))}
++    </ul>
++  );
++}

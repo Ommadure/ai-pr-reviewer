@@ -1,0 +1,5 @@
+id: clean-py-async-01
+language: python
+description: Async HTTP client call with timeout and error handling
+title: Exchange-rate client
+planted_bugs: []

@@ -1,0 +1,12 @@
+id: ts-command-injection-01
+language: typescript
+description: Repository URL interpolated into a shell command
+title: Clone repositories for builds
+planted_bugs:
+- path: src/build/clone.ts
+  lines:
+  - 8
+  - 8
+  category: security
+  severity: critical
+  description: 'Command injection: repoUrl from the request runs in a shell'

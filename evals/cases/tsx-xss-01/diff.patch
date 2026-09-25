@@ -1,0 +1,14 @@
+diff --git a/src/components/CommentView.tsx b/src/components/CommentView.tsx
+--- a/src/components/CommentView.tsx
++++ b/src/components/CommentView.tsx
+@@ -1 +1,10 @@
+ type Comment = { id: string; author: string; body: string };
++
++export function CommentView({ comment }: { comment: Comment }) {
++  return (
++    <article className="comment">
++      <header>{comment.author}</header>
++      <div dangerouslySetInnerHTML={{ __html: comment.body }} />
++    </article>
++  );
++}

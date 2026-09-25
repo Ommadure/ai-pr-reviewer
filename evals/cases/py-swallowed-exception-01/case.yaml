@@ -1,0 +1,12 @@
+id: py-swallowed-exception-01
+language: python
+description: Payment failure swallowed, order marked paid
+title: Checkout payment step
+planted_bugs:
+- path: app/checkout/pay.py
+  lines:
+  - 11
+  - 12
+  category: error_handling
+  severity: critical
+  description: 'Exception swallowed: a failed charge still marks the order paid'

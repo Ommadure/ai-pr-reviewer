@@ -1,0 +1,13 @@
+id: js-async-foreach-01
+language: javascript
+description: forEach with an async callback is not awaited
+title: Contact import
+planted_bugs:
+- path: src/services/import.js
+  lines:
+  - 4
+  - 6
+  category: bug
+  severity: high
+  description: 'forEach doesn''t await async callbacks: returns before inserts finish, and failures are
+    unhandled'

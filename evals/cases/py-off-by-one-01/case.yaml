@@ -1,0 +1,12 @@
+id: py-off-by-one-01
+language: python
+description: Batch sender skips the last message
+title: Batch email sender
+planted_bugs:
+- path: app/notify/batch.py
+  lines:
+  - 11
+  - 11
+  category: bug
+  severity: high
+  description: range(len - 1) never sends the last message

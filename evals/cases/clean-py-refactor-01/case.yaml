@@ -1,0 +1,5 @@
+id: clean-py-refactor-01
+language: python
+description: Extract a parameterised query helper, with a test
+title: Refactor catalog queries
+planted_bugs: []

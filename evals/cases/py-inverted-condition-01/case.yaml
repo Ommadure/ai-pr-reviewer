@@ -1,0 +1,14 @@
+id: py-inverted-condition-01
+language: python
+description: Token expiry check is inverted
+title: Verify API tokens
+planted_bugs:
+- path: app/auth/tokens.py
+  lines:
+  - 12
+  - 12
+  category: bug
+  severity: critical
+  description: 'Inverted check: valid tokens are rejected and expired ones accepted'
+  accept_categories:
+  - security

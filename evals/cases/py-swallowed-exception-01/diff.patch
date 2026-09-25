@@ -1,0 +1,18 @@
+diff --git a/app/checkout/pay.py b/app/checkout/pay.py
+--- a/app/checkout/pay.py
++++ b/app/checkout/pay.py
+@@ -1 +1,14 @@
++import logging
++
+ from app.payments import charge_card
++
++log = logging.getLogger(__name__)
++
++
++def pay(order) -> None:
++    try:
++        charge_card(order.card_token, order.total)
++    except Exception:
++        pass
++    order.status = "paid"
++    order.save()

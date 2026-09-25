@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 from app.review.cli import main
+from app.review.prompt_builder import DEFAULT_PROMPT_VERSION
 
 DIFFS = Path(__file__).parents[2] / "fixtures" / "diffs"
 
@@ -27,7 +28,7 @@ def test_cli_reviews_a_patch_offline(capsys: pytest.CaptureFixture[str]) -> None
 def test_cli_json_output(capsys: pytest.CaptureFixture[str]) -> None:
     assert main([str(DIFFS / "clean.patch"), "--provider", "fake", "--json"]) == 0
     result = json.loads(capsys.readouterr().out)
-    assert result["files_reviewed"] == 1 and result["prompt_version"] == "v1"
+    assert result["files_reviewed"] == 1 and result["prompt_version"] == DEFAULT_PROMPT_VERSION
 
 
 def test_cli_explains_missing_llm_configuration(

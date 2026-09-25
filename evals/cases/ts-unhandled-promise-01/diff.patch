@@ -1,0 +1,14 @@
+diff --git a/src/routes/inventory.ts b/src/routes/inventory.ts
+--- a/src/routes/inventory.ts
++++ b/src/routes/inventory.ts
+@@ -1,3 +1,10 @@
+ import { Router } from "express";
++import { syncInventory } from "../jobs/sync";
+ 
+ export const inventory = Router();
++
++inventory.post("/inventory/sync", (req, res) => {
++  const sku = String(req.body.sku ?? "");
++  syncInventory(sku);
++  res.status(202).json({ queued: sku });
++});

@@ -1,0 +1,31 @@
+diff --git a/src/routes/addresses.ts b/src/routes/addresses.ts
+new file mode 100644
+--- /dev/null
++++ b/src/routes/addresses.ts
+@@ -0,0 +1,26 @@
++import { Router } from "express";
++import { z } from "zod";
++import { requireUser } from "../auth";
++import { addresses } from "../store";
++
++const Address = z.object({
++  line1: z.string().min(1).max(200),
++  city: z.string().min(1).max(100),
++  postcode: z.string().regex(/^[0-9]{6}$/),
++});
++
++export const addressRoutes = Router();
++addressRoutes.use(requireUser);
++
++addressRoutes.post("/addresses", async (req, res, next) => {
++  const parsed = Address.safeParse(req.body);
++  if (!parsed.success) {
++    return res.status(422).json({ errors: parsed.error.flatten() });
++  }
++  try {
++    const saved = await addresses.create(req.user.id, parsed.data);
++    res.status(201).json(saved);
++  } catch (err) {
++    next(err);
++  }
++});

@@ -1,0 +1,12 @@
+id: ts-unhandled-promise-01
+language: typescript
+description: Fire-and-forget sync with no rejection handler
+title: Manual inventory sync endpoint
+planted_bugs:
+- path: src/routes/inventory.ts
+  lines:
+  - 8
+  - 8
+  category: error_handling
+  severity: high
+  description: 'Promise from syncInventory is neither awaited nor caught: a rejection crashes the process'

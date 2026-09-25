@@ -1,0 +1,17 @@
+diff --git a/app/catalog/search.py b/app/catalog/search.py
+--- a/app/catalog/search.py
++++ b/app/catalog/search.py
+@@ -6,3 +6,13 @@
+         cur = conn.cursor()
+         cur.execute("SELECT id, name, price FROM products WHERE id = %s", (product_id,))
+         return cur.fetchone()
++
++
++def search_products(term: str, limit: int = 20):
++    """Products whose name contains `term`, for the storefront search box."""
++    with get_connection() as conn:
++        cur = conn.cursor()
++        cur.execute(
++            f"SELECT id, name, price FROM products WHERE name ILIKE '%{term}%' LIMIT {limit}"
++        )
++        return cur.fetchall()

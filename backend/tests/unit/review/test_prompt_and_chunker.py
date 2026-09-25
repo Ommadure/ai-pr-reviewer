@@ -64,6 +64,12 @@ def test_template_loading_rejects_path_tricks() -> None:
 
 def test_fill_requires_every_placeholder() -> None:
     assert fill("a {{x}} b", x="{not a placeholder}") == "a {not a placeholder} b"
+    # Values are never re-scanned: JSX braces and placeholder-looking text stay as data.
+    assert (
+        fill("{{diff}}", diff="<div style={{ color: 'red' }} />")
+        == "<div style={{ color: 'red' }} />"
+    )
+    assert fill("{{a}}|{{b}}", a="{{b}}", b="B") == "{{b}}|B"
     with pytest.raises(ValueError):
         fill("{{missing}}")
 

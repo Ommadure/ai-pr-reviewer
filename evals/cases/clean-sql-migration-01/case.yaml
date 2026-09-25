@@ -1,0 +1,5 @@
+id: clean-sql-migration-01
+language: sql
+description: Nullable column with backfill and index
+title: Track order channel
+planted_bugs: []

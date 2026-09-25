@@ -1,0 +1,11 @@
+diff --git a/app/admin/permissions.py b/app/admin/permissions.py
+--- a/app/admin/permissions.py
++++ b/app/admin/permissions.py
+@@ -1 +1,7 @@
+ from app.users import User
++
++
++def can_delete_project(user: User, project) -> bool:
++    if user.role is "admin":
++        return True
++    return project.owner_id == user.id

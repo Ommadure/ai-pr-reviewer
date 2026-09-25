@@ -24,7 +24,8 @@ from app.review.llm.base import Message
 from app.review.models import FileDiff, FileSummary, PRContext
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
-DEFAULT_PROMPT_VERSION = "v1"
+# v3 shipped after the Phase 6 eval: see evals/RESULTS.md for why.
+DEFAULT_PROMPT_VERSION = "v3"
 PROMPT_VERSION_FORMAT = re.compile(r"^v\d+$")
 MAX_DESCRIPTION_CHARS = 2_000
 # Our structural tags. PR content that contains them could otherwise "close"
@@ -68,13 +69,19 @@ def load_template(version: str, name: str) -> str:
     return (PROMPTS_DIR / version / f"{name}.md").read_text()
 
 
+PLACEHOLDER = re.compile(r"\{\{(\w+)\}\}")
+
+
 def fill(template: str, **values: str) -> str:
-    """`{{name}}` placeholders; values are inserted verbatim (no format-string pitfalls)."""
-    for key, value in values.items():
-        template = template.replace("{{" + key + "}}", value)
-    if "{{" in template:
-        raise ValueError(f"unfilled placeholder in prompt: {template[template.index('{{') :][:40]}")
-    return template
+    """`{{name}}` placeholders, filled in one pass over the *template*.
+
+    Values are inserted verbatim and never scanned again: a diff full of JSX
+    (`style={{ ... }}`) or a PR description containing "{{diff}}" is just text.
+    """
+    missing = sorted(set(PLACEHOLDER.findall(template)) - values.keys())
+    if missing:
+        raise ValueError(f"unfilled placeholder in prompt: {missing}")
+    return PLACEHOLDER.sub(lambda m: values[m.group(1)], template)
 
 
 def neutralize(text: str) -> str:

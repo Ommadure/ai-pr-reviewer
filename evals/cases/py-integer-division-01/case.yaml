@@ -1,0 +1,12 @@
+id: py-integer-division-01
+language: python
+description: Average rating truncated by floor division
+title: Show average rating
+planted_bugs:
+- path: app/reviews/stats.py
+  lines:
+  - 8
+  - 8
+  category: bug
+  severity: medium
+  description: '// floors the average: 4.6 stars becomes 4'

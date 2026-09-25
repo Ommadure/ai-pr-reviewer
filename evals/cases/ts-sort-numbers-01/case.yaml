@@ -1,0 +1,12 @@
+id: ts-sort-numbers-01
+language: typescript
+description: Numbers sorted as strings
+title: Leaderboard top three
+planted_bugs:
+- path: src/leaderboard.ts
+  lines:
+  - 5
+  - 5
+  category: bug
+  severity: medium
+  description: 'Default sort is lexicographic: [100, 25, 9] sorts wrong'

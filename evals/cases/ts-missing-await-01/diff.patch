@@ -1,0 +1,15 @@
+diff --git a/src/routes/profile.ts b/src/routes/profile.ts
+--- a/src/routes/profile.ts
++++ b/src/routes/profile.ts
+@@ -2,3 +2,11 @@
+ import { getUser } from "../services/users";
+ 
+ export const profile = Router();
++
++profile.get("/users/:id", async (req, res) => {
++  const user = getUser(req.params.id);
++  if (!user) {
++    return res.status(404).json({ error: "not found" });
++  }
++  res.json({ id: req.params.id, name: user.name, email: user.email });
++});

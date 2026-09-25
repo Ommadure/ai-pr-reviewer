@@ -1,0 +1,50 @@
+name: Eval smoke (manual)
+
+# A real-model eval costs money (or free-tier quota), so it never runs on push or
+# PR: only when someone starts it from the Actions tab. It runs a small subset of
+# cases and uploads the result files. The full eval is run locally (see evals/README.md).
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: "Prompt version (e.g. v1, v2)"
+        default: "v2"
+        required: true
+      cases:
+        description: "Glob over case ids"
+        default: "py-sql*"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      APP_ENV: test # the eval needs no database, Redis or GitHub settings
+      LLM_PROVIDER: gemini
+      LLM_MODEL: ${{ vars.LLM_MODEL }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.18"
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --frozen
+      - name: Run eval subset
+        # Inputs go through env, never straight into the script, so they can't inject shell.
+        env:
+          PROMPT: ${{ inputs.prompt }}
+          CASES: ${{ inputs.cases }}
+        run: uv run python ../evals/run_eval.py --prompt "$PROMPT" --cases "$CASES" --pause 5
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: evals/results/

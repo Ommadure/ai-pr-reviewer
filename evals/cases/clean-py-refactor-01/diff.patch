@@ -1,0 +1,45 @@
+diff --git a/app/catalog/queries.py b/app/catalog/queries.py
+--- a/app/catalog/queries.py
++++ b/app/catalog/queries.py
+@@ -1,15 +1,16 @@
+ from app.db import get_connection
+ 
+ 
+-def get_product(product_id: int):
++def _fetch_one(sql: str, params: tuple):
+     with get_connection() as conn:
+         cur = conn.cursor()
+-        cur.execute("SELECT id, name, price FROM products WHERE id = %s", (product_id,))
++        cur.execute(sql, params)
+         return cur.fetchone()
+ 
+ 
++def get_product(product_id: int):
++    return _fetch_one("SELECT id, name, price FROM products WHERE id = %s", (product_id,))
++
++
+ def get_category(category_id: int):
+-    with get_connection() as conn:
+-        cur = conn.cursor()
+-        cur.execute("SELECT id, name FROM categories WHERE id = %s", (category_id,))
+-        return cur.fetchone()
++    return _fetch_one("SELECT id, name FROM categories WHERE id = %s", (category_id,))
+diff --git a/tests/test_queries.py b/tests/test_queries.py
+new file mode 100644
+--- /dev/null
++++ b/tests/test_queries.py
+@@ -0,0 +1,14 @@
++from unittest.mock import MagicMock, patch
++
++from app.catalog import queries
++
++
++def test_get_product_passes_the_id_as_a_parameter():
++    conn = MagicMock()
++    cursor = conn.__enter__.return_value.cursor.return_value
++    cursor.fetchone.return_value = (1, "Mug", 250)
++    with patch.object(queries, "get_connection", return_value=conn):
++        assert queries.get_product(1) == (1, "Mug", 250)
++    cursor.execute.assert_called_once_with(
++        "SELECT id, name, price FROM products WHERE id = %s", (1,)
++    )

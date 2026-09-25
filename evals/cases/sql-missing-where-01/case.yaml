@@ -1,0 +1,12 @@
+id: sql-missing-where-01
+language: sql
+description: Cleanup script cancels every subscription
+title: Expire old trials
+planted_bugs:
+- path: db/scripts/2031_07_expire_trials.sql
+  lines:
+  - 4
+  - 6
+  category: bug
+  severity: critical
+  description: 'UPDATE has no WHERE clause: cancels every subscription, not just expired trials'

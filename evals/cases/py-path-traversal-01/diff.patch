@@ -1,0 +1,13 @@
+diff --git a/app/api/files.py b/app/api/files.py
+--- a/app/api/files.py
++++ b/app/api/files.py
+@@ -5,3 +5,9 @@
+ 
+ router = APIRouter()
+ UPLOAD_DIR = "/srv/uploads"
++
++
++@router.get("/files/{filename:path}")
++def download(filename: str) -> FileResponse:
++    path = os.path.join(UPLOAD_DIR, filename)
++    return FileResponse(path)

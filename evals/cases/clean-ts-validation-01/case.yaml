@@ -1,0 +1,5 @@
+id: clean-ts-validation-01
+language: typescript
+description: Validated, awaited endpoint with error forwarding
+title: Save delivery addresses
+planted_bugs: []
