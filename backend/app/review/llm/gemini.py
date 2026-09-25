@@ -13,6 +13,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
+import structlog
 
 from app.review.llm.base import (
     BaseProvider,
@@ -23,6 +24,7 @@ from app.review.llm.base import (
     TokenUsage,
 )
 
+log = structlog.get_logger()
 Sleep = Callable[[float], Awaitable[None]]
 GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta"
 MODEL_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -63,35 +65,56 @@ class GeminiProvider(BaseProvider):
         # The key goes in a header, never the URL, so it can't end up in access logs.
         headers = {"x-goog-api-key": self._api_key}
 
+        # Latency covers the whole call, retries and waits included: that's the time
+        # the review actually spent here, and what the dashboard should show.
+        started = time.monotonic()
         attempt = 0
         while True:
-            started = time.monotonic()
             try:
                 response = await self._http.post(
                     url, json=body, headers=headers, timeout=self._timeout
                 )
             except httpx.TransportError as exc:
                 if attempt >= self._max_retries:
-                    raise LLMError(f"Gemini unreachable: {type(exc).__name__}") from exc
-                await self._sleep(_backoff(attempt))
+                    raise LLMError(
+                        f"Gemini unreachable: {type(exc).__name__}", latency_ms=_since(started)
+                    ) from exc
+                await self._retry(_backoff(attempt), model, attempt, type(exc).__name__)
                 attempt += 1
                 continue
-            latency_ms = int((time.monotonic() - started) * 1000)
 
             if response.status_code == 429:
                 wait = _retry_delay(response) or _backoff(attempt)
                 if wait <= self._max_inline_wait and attempt < self._max_retries:
-                    await self._sleep(wait)
+                    await self._retry(wait, model, attempt, "429 rate limited")
                     attempt += 1
                     continue
                 raise LLMRateLimited("Gemini rate limit exceeded", retry_after=wait)
             if response.status_code >= 500 and attempt < self._max_retries:
-                await self._sleep(_backoff(attempt))
+                await self._retry(_backoff(attempt), model, attempt, str(response.status_code))
                 attempt += 1
                 continue
             if response.is_error:
-                raise LLMError(f"Gemini {response.status_code}: {_error_message(response)}")
-            return _parse_completion(response.json(), model, latency_ms)
+                raise LLMError(
+                    f"Gemini {response.status_code}: {_error_message(response)}",
+                    latency_ms=_since(started),
+                )
+            return _parse_completion(response.json(), model, _since(started))
+
+    async def _retry(self, wait: float, model: str, attempt: int, reason: str) -> None:
+        log.warning(
+            "llm.retry",
+            provider=self.name,
+            model=model,
+            attempt=attempt + 1,
+            reason=reason,
+            wait_s=round(wait, 1),
+        )
+        await self._sleep(wait)
+
+
+def _since(started: float) -> int:
+    return int((time.monotonic() - started) * 1000)
 
 
 def _request_body(messages: list[Message], temperature: float) -> dict[str, Any]:
