@@ -91,4 +91,6 @@ flowchart LR
 | Review engine (parse, filter, redact, prioritise, chunk, LLM, validate, dedupe, summarise) | `app/review/`, `app/config/repo_config.py` | ✅ Phase 2 |
 | Gemini provider + fake provider | `app/review/llm/` | ✅ Phase 2 |
 | CLI | `python -m app.review.cli change.patch` | ✅ Phase 2 |
-| Dashboard | `frontend/` | placeholder page |
+| GitHub login, encrypted user tokens, session cookie | `app/api/v1/routes/auth.py`, `app/core/security.py`, `app/services/accounts.py` | ✅ Phase 5 |
+| Tenant-scoped dashboard API (cursor pagination) | `app/api/v1/routes/dashboard.py`, `app/repositories/dashboard.py` | ✅ Phase 5 |
+| Dashboard SPA (React Router, TanStack Query, Recharts, generated API types) | `frontend/src/` | ✅ Phase 5 |

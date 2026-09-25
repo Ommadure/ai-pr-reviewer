@@ -61,3 +61,9 @@ disallow_untyped_decorators = false
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+
+[tool.coverage.run]
+# SQLAlchemy's asyncio layer runs code inside greenlets; without this, coverage
+# misses lines executed after DB awaits and under-reports async routes.
+concurrency = ["greenlet", "thread"]
+source = ["app"]

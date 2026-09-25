@@ -119,6 +119,29 @@ npx smee-client --url <your smee URL> \
 
 Open a pull request on your test repository. Within a few seconds you should see a **ReviewPilot** check and a 👋 comment on the first added line. The api logs show `webhook.handled status=queued`, and the worker logs show `review.hello_posted`.
 
+## 8. Dashboard login (Phase 5)
+
+The dashboard signs people in through this same App. You need:
+
+1. **Callback URL:** on the App's settings page, set it to `http://localhost:8000/api/v1/auth/github/callback`, then click **Save changes**. Keep **Expire user authorization tokens** checked.
+2. **Client secret:** on the App's page, click **Generate a new client secret** and put it in `GITHUB_APP_CLIENT_SECRET`. GitHub shows it only once.
+3. **Two new secrets in `backend/.env`.** Generate them in your own terminal:
+   ```bash
+   echo "SESSION_SECRET=$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')" >> backend/.env
+   ```
+   ```bash
+   echo "ENCRYPTION_KEY=$(cd backend && uv run python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')" >> backend/.env
+   ```
+   If you ever change `ENCRYPTION_KEY`, stored GitHub tokens can no longer be decrypted, and everyone simply has to sign in again.
+4. Rebuild and start the stack, then start the frontend:
+   ```bash
+   docker compose up --build
+   ```
+   ```bash
+   cd frontend && npm run dev
+   ```
+   Open <http://localhost:5173> and click **Sign in with GitHub**.
+
 ## Production later (Phase 7)
 
 When the backend is deployed:

@@ -2,7 +2,7 @@
 
 A GitHub App that reviews pull requests with an LLM. It posts validated inline comments on the exact changed lines, and a React dashboard tracks review history, cost, and how useful the comments are.
 
-> 🚧 In progress: **Phase 4**: incremental reviews, slash commands, feedback. The full README (demo, eval results, metrics) comes in Phase 7.
+> 🚧 In progress: **Phase 5**: the dashboard. The full README (demo, eval results, metrics) comes in Phase 7.
 
 ## Local setup
 
@@ -29,6 +29,24 @@ cd backend
 git -C .. diff main > /tmp/change.patch
 uv run python -m app.review.cli /tmp/change.patch                    # uses LLM_* from backend/.env
 uv run python -m app.review.cli /tmp/change.patch --provider fake    # offline, no API key
+```
+
+## Dashboard
+
+Sign in with GitHub to see only the installations you can access on GitHub (ADR 0012). It has:
+- **Overview:** reviews, comments, helpful rate, cost (₹ with `USD_TO_INR`) and p95 latency.
+- **Repositories:** turn automatic reviews on or off, and see each repo's config status.
+- **Pull requests:** every review run on a timeline, plus **Review again**.
+- **Run detail:** summary, comments grouped by file with links to GitHub, the comments validation dropped (with reasons), skipped files, and every LLM call with its tokens, cost and time.
+- **Analytics:** 7, 30 or 90 days, per repository.
+
+```bash
+cd frontend && npm install && npm run dev   # http://localhost:5173, /api proxied to :8000
+```
+
+After changing the API, regenerate the typed client:
+```bash
+cd backend && uv run python scripts/export_openapi.py && cd ../frontend && npm run gen:api
 ```
 
 ## Slash commands
@@ -91,3 +109,4 @@ A comment with mixed reactions counts in both, so the two rates don't add up to 
   - [0009 Config from the default branch](docs/adr/0009-config-from-default-branch.md)
   - [0010 Review-run lifecycle and idempotency](docs/adr/0010-review-run-lifecycle.md)
   - [0011 Incremental reviews](docs/adr/0011-incremental-reviews.md)
+  - [0012 Dashboard login, sessions and tenancy](docs/adr/0012-dashboard-auth-and-tenancy.md)
