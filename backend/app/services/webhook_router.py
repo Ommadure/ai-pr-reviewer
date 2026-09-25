@@ -12,19 +12,21 @@ from typing import Any, Literal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.github import events
-from app.repositories import installations, pull_requests, repos
+from app.repositories import installations, pull_requests, repo_configs, repos, review_runs
 from app.services.installations import ensure_repository, sync_installation
 
 DeliveryStatus = Literal["processed", "queued", "ignored"]
-REVIEW_TRIGGER_ACTIONS = {"opened", "reopened", "ready_for_review"}
+# Every push reviews again; fingerprints stop old comments being repeated.
+# Phase 4 makes "synchronize" review only the new commits (incremental mode).
+REVIEW_TRIGGER_ACTIONS = {"opened", "reopened", "ready_for_review", "synchronize"}
 COMMAND_PREFIX = "/reviewpilot"
 
 
 @dataclass(frozen=True)
 class ReviewJob:
-    pull_request_id: int
-    head_sha: str
-    trigger: str
+    """What the worker needs: the id of a review_runs row created in 'queued' state."""
+
+    run_id: int
 
 
 @dataclass
@@ -102,7 +104,7 @@ async def handle_installation_repositories(
 
 async def handle_pull_request(session: AsyncSession, payload: dict[str, Any]) -> RouteOutcome:
     event = events.PullRequestEvent.model_validate(payload)
-    if event.action not in REVIEW_TRIGGER_ACTIONS | {"synchronize", "edited", "closed"}:
+    if event.action not in REVIEW_TRIGGER_ACTIONS | {"edited", "closed"}:
         return ignored("unhandled_action")
 
     # Always record the latest PR state, even when we won't review.
@@ -111,10 +113,12 @@ async def handle_pull_request(session: AsyncSession, payload: dict[str, Any]) ->
         session, repository_id=repository_id, payload=event.pull_request
     )
 
-    if event.action in {"edited", "closed"}:
+    if event.action == "closed":
+        # Nobody needs a review of a closed PR: drop anything still waiting.
+        await review_runs.skip_queued_for_pr(session, pr.id, "pr_closed")
         return processed()
-    if event.action == "synchronize":
-        return ignored("incremental_reviews_not_implemented")  # Phase 4
+    if event.action == "edited":
+        return processed()
 
     repository = await repos.get(session, repository_id)
     installation = await installations.get_by_github_id(session, event.installation.id)
@@ -124,9 +128,27 @@ async def handle_pull_request(session: AsyncSession, payload: dict[str, Any]) ->
         return ignored("installation_suspended")
     if pr.paused:
         return ignored("pr_paused")
-    if pr.draft:
-        return ignored("draft")  # becomes configurable via .reviewpilot.yml in Phase 3
-    return RouteOutcome("queued", jobs=[ReviewJob(pr.id, pr.head_sha, trigger=event.action)])
+    if pr.draft and not await _drafts_allowed(session, repository_id):
+        return ignored("draft")
+
+    run = await review_runs.create_queued(
+        session,
+        pull_request_id=pr.id,
+        trigger=event.action,
+        mode="full",
+        base_sha=pr.base_sha,
+        head_sha=pr.head_sha,
+    )
+    return RouteOutcome("queued", jobs=[ReviewJob(run.id)])
+
+
+async def _drafts_allowed(session: AsyncSession, repository_id: int) -> bool:
+    """Uses the last cached .reviewpilot.yml: the webhook handler never calls GitHub.
+
+    The worker re-checks against the freshly loaded config before reviewing.
+    """
+    cached = await repo_configs.latest(session, repository_id)
+    return bool(cached and cached.parsed.get("review_drafts"))
 
 
 # ---- PR conversation comments ----

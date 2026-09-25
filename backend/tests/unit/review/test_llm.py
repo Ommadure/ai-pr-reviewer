@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 import httpx
@@ -151,10 +152,20 @@ async def test_gemini_long_rate_limit_raises(gemini: GeminiProvider) -> None:
 
 
 @respx.mock
-async def test_gemini_retries_server_errors(gemini: GeminiProvider, sleep: FakeSleep) -> None:
+async def test_gemini_retries_server_errors_and_times_the_whole_call(
+    sleep: FakeSleep,
+) -> None:
+    async def slow_sleep(seconds: float) -> None:
+        sleep.calls.append(seconds)
+        await asyncio.sleep(0.05)  # stand-in for a real backoff wait
+
+    gemini = GeminiProvider("test-key", httpx.AsyncClient(), sleep=slow_sleep)
     respx.post(URL).mock(side_effect=[httpx.Response(503), _gemini_response(json.dumps(VALID))])
-    await gemini.generate_structured(MESSAGES, FileReviewOutput, model=MODEL, temperature=0)
+    result = await gemini.generate_structured(
+        MESSAGES, FileReviewOutput, model=MODEL, temperature=0
+    )
     assert len(sleep.calls) == 1
+    assert result.latency_ms >= 50  # the retry wait counts: it's time the review spent
 
 
 @respx.mock

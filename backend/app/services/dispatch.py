@@ -14,7 +14,7 @@ class CeleryReviewDispatcher:
         # Imported lazily so importing the API doesn't configure Celery.
         from app.workers.tasks import review_pull_request
 
-        review_pull_request.delay(job.pull_request_id, job.head_sha, job.trigger)
+        review_pull_request.delay(job.run_id)
 
 
 def get_review_dispatcher() -> ReviewDispatcher:

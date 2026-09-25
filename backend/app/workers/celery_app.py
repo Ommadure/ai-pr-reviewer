@@ -32,6 +32,9 @@ celery_app.conf.update(
     task_soft_time_limit=240,
     task_time_limit=300,
     task_default_queue="default",
+    # Celery captures print()/stdout into its own logger at WARNING by default, which
+    # made every structlog info line look like a warning.
+    worker_redirect_stdouts_level="INFO",
     task_routes={
         "app.workers.tasks.review_*": {"queue": "reviews"},
         "app.workers.tasks.poll_feedback": {"queue": "feedback"},

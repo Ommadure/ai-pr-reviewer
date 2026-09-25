@@ -23,28 +23,33 @@ flowchart LR
 5. **All PR content is untrusted data.**
 6. **Config is read from the default branch only.**
 
-## Webhook → review flow (Phase 1)
+## Webhook → review flow (Phase 3)
 
 ```mermaid
 sequenceDiagram
     participant GH as GitHub
     participant API as FastAPI /webhooks/github
     participant DB as Postgres
-    participant Q as Redis (broker)
+    participant Q as Redis (broker + locks)
     participant W as Celery worker
-    GH->>API: POST event (X-Hub-Signature-256, X-GitHub-Delivery)
-    API->>API: verify HMAC over raw body (401 if bad)
-    API->>DB: INSERT delivery ON CONFLICT (dedupe)
-    API->>DB: route event: upsert installation / repo / PR
-    API->>DB: COMMIT
-    API->>Q: enqueue review_pull_request(pr_id, head_sha)
-    API-->>GH: 202 Accepted (milliseconds)
-    Q->>W: deliver task
-    W->>DB: load PR; stale head? → superseded
-    W->>GH: App JWT → installation token (cached in Redis)
-    W->>GH: create check run (in_progress)
-    W->>GH: list PR files → post review (event COMMENT)
+    participant LLM as LLM provider
+    GH->>API: pull_request opened / synchronize (signed)
+    API->>API: verify HMAC · dedupe delivery id
+    API->>DB: upsert PR · INSERT review_runs (queued) · COMMIT
+    API->>Q: review_pull_request(run_id)
+    API-->>GH: 202 (milliseconds)
+    Q->>W: task
+    W->>Q: lock:pr:{id}
+    W->>DB: run still queued? head unchanged? → running
+    W->>GH: default-branch head → .reviewpilot.yml (cached per commit)
+    W->>GH: live PR (stale/draft check) · create check run (in progress)
+    W->>GH: list PR files
+    W->>LLM: run_review(): chunks → comments → summary
+    W->>DB: head moved meanwhile? → superseded, don't post
+    W->>GH: ONE review (COMMENT) with inline comments (422 → one by one)
     W->>GH: complete check run (success / neutral)
+    W->>DB: run metrics · llm_calls · review_comments · last_reviewed_sha
+    W->>Q: unlock
 ```
 
 ## Review engine (Phase 2)
@@ -75,7 +80,10 @@ flowchart LR
 | GitHub App auth + token cache | `app/github/app_auth.py` | ✅ Phase 1 |
 | GitHub REST client (retries, rate limits, pagination) | `app/github/client.py` | ✅ Phase 1 |
 | Tables: installations, repositories, pull_requests, webhook_deliveries | `app/models/`, `alembic/versions/` | ✅ Phase 1 |
-| Review pipeline | `app/services/orchestrator.py` | 🚧 hello-loop only |
+| Review pipeline (lock, stale checks, config, posting, 422 fallback, persistence) | `app/services/orchestrator.py` | ✅ Phase 3 |
+| Config from default branch, cached per commit | `app/services/config_loader.py` | ✅ Phase 3 |
+| Review history tables: review_runs, llm_calls, review_comments, repo_configs | `app/models/review.py` | ✅ Phase 3 |
+| Beat: mark_stuck_runs (10 min), cleanup_webhook_deliveries (daily) | `app/workers/` | ✅ Phase 3 |
 | Review engine (parse, filter, redact, prioritise, chunk, LLM, validate, dedupe, summarise) | `app/review/`, `app/config/repo_config.py` | ✅ Phase 2 |
 | Gemini provider + fake provider | `app/review/llm/` | ✅ Phase 2 |
 | CLI | `python -m app.review.cli change.patch` | ✅ Phase 2 |

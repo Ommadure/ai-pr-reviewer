@@ -6,6 +6,7 @@ Reference: https://docs.github.com/en/rest/using-the-rest-api
 """
 
 import asyncio
+import base64
 import random
 import time
 from collections.abc import Awaitable, Callable
@@ -28,6 +29,8 @@ DEFAULT_HEADERS = {
 SECONDARY_RATE_LIMIT_DEFAULT_WAIT = 60.0
 
 TokenGetter = Callable[[], Awaitable[str]]
+# Never "failure": ReviewPilot advises, humans decide (ADR 0006).
+Conclusion = Literal["success", "neutral", "skipped"]
 Sleep = Callable[[float], Awaitable[None]]
 
 
@@ -110,6 +113,43 @@ class ReviewCommentInput(BaseModel):
 class CheckRunOutput(BaseModel):
     title: str
     summary: str
+
+
+class PullRequestInfo(BaseModel):
+    """The live PR from GitHub (webhook payloads can be stale by the time we run)."""
+
+    number: int
+    title: str
+    body: str | None = None
+    state: str
+    draft: bool = False
+    head_sha: str
+    head_ref: str
+    base_sha: str
+    base_ref: str
+    author: str
+
+    @classmethod
+    def from_api(cls, data: dict[str, Any]) -> "PullRequestInfo":
+        return cls(
+            number=data["number"],
+            title=data["title"],
+            body=data.get("body"),
+            state=data["state"],
+            draft=bool(data.get("draft")),
+            head_sha=data["head"]["sha"],
+            head_ref=data["head"]["ref"],
+            base_sha=data["base"]["sha"],
+            base_ref=data["base"]["ref"],
+            author=data["user"]["login"],
+        )
+
+
+class PostedComment(BaseModel):
+    id: int
+    path: str
+    body: str
+    line: int | None = None
 
 
 class GitHubClient:
@@ -253,7 +293,7 @@ class GitHubClient:
         repo: str,
         check_run_id: int,
         *,
-        conclusion: Literal["success", "neutral"],
+        conclusion: Conclusion,
         output: CheckRunOutput,
     ) -> None:
         # ReviewPilot never concludes "failure": it advises, humans decide.
@@ -282,5 +322,57 @@ class GitHubClient:
         }
         response = await self.request(
             "POST", f"/repos/{owner}/{repo}/pulls/{number}/reviews", json=payload
+        )
+        return int(response.json()["id"])
+
+    async def get_pull_request(self, owner: str, repo: str, number: int) -> PullRequestInfo:
+        response = await self.request("GET", f"/repos/{owner}/{repo}/pulls/{number}")
+        return PullRequestInfo.from_api(response.json())
+
+    async def get_branch_head_sha(self, owner: str, repo: str, branch: str) -> str:
+        response = await self.request("GET", f"/repos/{owner}/{repo}/branches/{branch}")
+        return str(response.json()["commit"]["sha"])
+
+    async def get_file_text(
+        self, owner: str, repo: str, path: str, *, ref: str, max_bytes: int
+    ) -> str | None:
+        """A file's text at `ref`, or None if it doesn't exist (or isn't a file)."""
+        try:
+            response = await self.request(
+                "GET", f"/repos/{owner}/{repo}/contents/{path}", params={"ref": ref}
+            )
+        except GitHubError as exc:
+            if exc.status_code == 404:
+                return None
+            raise
+        data = response.json()
+        if not isinstance(data, dict) or data.get("type") != "file":
+            return None
+        if int(data.get("size", 0)) > max_bytes:
+            raise ValueError(f"{path} is larger than {max_bytes} bytes")
+        # Content is base64 with embedded newlines; b64decode ignores them.
+        return base64.b64decode(data.get("content", "")).decode("utf-8", errors="replace")
+
+    async def create_review_comment(
+        self, owner: str, repo: str, number: int, *, commit_id: str, comment: ReviewCommentInput
+    ) -> int:
+        """One inline comment outside a review: the fallback when a batch review is rejected."""
+        payload = {"commit_id": commit_id, **comment.model_dump(exclude_none=True)}
+        response = await self.request(
+            "POST", f"/repos/{owner}/{repo}/pulls/{number}/comments", json=payload
+        )
+        return int(response.json()["id"])
+
+    async def list_review_comments(
+        self, owner: str, repo: str, number: int, review_id: int
+    ) -> list[PostedComment]:
+        items = await self.paginate(
+            f"/repos/{owner}/{repo}/pulls/{number}/reviews/{review_id}/comments"
+        )
+        return [PostedComment.model_validate(item) for item in items]
+
+    async def create_issue_comment(self, owner: str, repo: str, number: int, body: str) -> int:
+        response = await self.request(
+            "POST", f"/repos/{owner}/{repo}/issues/{number}/comments", json={"body": body}
         )
         return int(response.json()["id"])

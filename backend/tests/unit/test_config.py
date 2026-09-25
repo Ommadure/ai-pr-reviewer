@@ -49,6 +49,9 @@ def _complete_dev_settings(**overrides: object) -> dict[str, object]:
             b"-----BEGIN RSA PRIVATE KEY-----\n..."
         ).decode(),
         "github_webhook_secret": "whsec",
+        "llm_provider": "gemini",
+        "llm_model": "gemini-test",
+        "gemini_api_key": "test-key",
     }
     return {**values, **overrides}
 
@@ -86,3 +89,9 @@ def test_llm_pricing_is_parsed_from_json_env(monkeypatch: pytest.MonkeyPatch) ->
 def test_review_settings_need_no_server_credentials() -> None:
     # The CLI/evals run with only an LLM key: no GitHub App, database or Redis.
     ReviewSettings(_env_file=None)
+
+
+def test_server_needs_llm_model_and_key() -> None:
+    with pytest.raises(ValidationError, match="LLM_MODEL, GEMINI_API_KEY"):
+        Settings(**_complete_dev_settings(llm_model="", gemini_api_key=""))  # type: ignore[arg-type]
+    Settings(**_complete_dev_settings(llm_provider="fake", llm_model="", gemini_api_key=""))  # type: ignore[arg-type]

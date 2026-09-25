@@ -1,6 +1,9 @@
-# Secrets
+# Secrets (.env plus editor backups like .env.save / .env.swp; the template stays tracked)
 .env
+.env.*
+!.env.example
 *.pem
+*.swp
 
 # Python
 __pycache__/
