@@ -1,6 +1,8 @@
 """webhook_deliveries access. The primary key (GitHub's delivery id) is our dedupe key."""
 
-from sqlalchemy import update
+from datetime import datetime
+
+from sqlalchemy import delete, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -80,3 +82,10 @@ async def record_failure(
         )
     )
     await session.execute(stmt)
+
+
+async def delete_received_before(session: AsyncSession, cutoff: datetime) -> int:
+    result = await session.execute(
+        delete(WebhookDelivery).where(WebhookDelivery.received_at < cutoff)
+    )
+    return result.rowcount or 0  # type: ignore[attr-defined]

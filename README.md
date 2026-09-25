@@ -2,7 +2,7 @@
 
 A GitHub App that reviews pull requests with an LLM. It posts validated inline comments on the exact changed lines, and a React dashboard tracks review history, cost, and how useful the comments are.
 
-> 🚧 In progress: **Phase 1** (webhook → hello review loop, awaiting the real-PR check) and **Phase 2** (review engine). The full README (demo, eval results, metrics) comes in Phase 7.
+> 🚧 In progress: **Phase 3**: real AI reviews on GitHub. The full README (demo, eval results, metrics) comes in Phase 7.
 
 ## Local setup
 
@@ -43,3 +43,5 @@ uv run python -m app.review.cli /tmp/change.patch --provider fake    # offline, 
   - [0006 Comment-only reviews](docs/adr/0006-comment-only-reviews.md)
   - [0007 Pure review engine](docs/adr/0007-pure-review-engine.md)
   - [0008 Comment fingerprints](docs/adr/0008-comment-fingerprints.md)
+  - [0009 Config from the default branch](docs/adr/0009-config-from-default-branch.md)
+  - [0010 Review-run lifecycle and idempotency](docs/adr/0010-review-run-lifecycle.md)

@@ -16,8 +16,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 AppEnv = Literal["development", "test", "production"]
 LLMProviderName = Literal["gemini", "anthropic", "openai", "openai_compatible", "fake"]
 
-# Settings the *server* (api/worker/beat) needs outside of tests. Later phases
-# extend this (LLM key in Phase 3, session secrets in Phase 5).
+# Settings the *server* (api/worker/beat) needs outside of tests. The LLM settings
+# are checked separately below; session secrets join in Phase 5.
 REQUIRED_OUTSIDE_TESTS: tuple[str, ...] = (
     "database_url",
     "redis_url",
@@ -89,6 +89,12 @@ class Settings(ReviewSettings):
         ]
         if not (self.github_app_client_id or self.github_app_id):
             missing.append("GITHUB_APP_CLIENT_ID (or GITHUB_APP_ID)")
+        # The worker reviews with the LLM (Phase 3+): fail at startup, not on the first PR.
+        if self.llm_provider != "fake":
+            if not self.llm_model:
+                missing.append("LLM_MODEL")
+            if self.llm_provider == "gemini" and not _is_set(self.gemini_api_key):
+                missing.append("GEMINI_API_KEY")
         if missing:
             raise ValueError(f"Missing required settings: {', '.join(missing)}")
         if self.github_app_private_key_b64.get_secret_value():

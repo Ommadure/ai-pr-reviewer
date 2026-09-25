@@ -7,8 +7,10 @@ import pytest
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.config.repo_config import parse_repo_config
 from app.github.signatures import compute_signature
-from app.models import Installation, PullRequest, Repository, WebhookDelivery
+from app.models import Installation, PullRequest, Repository, ReviewRun, WebhookDelivery
+from app.repositories import repo_configs
 from tests.helpers import (
     BOT_LOGIN,
     WEBHOOK_SECRET,
@@ -166,9 +168,13 @@ async def test_pull_request_opened_stores_pr_and_enqueues_review(
     assert (pr.number, pr.state, pr.head_sha) == (1, "open", "a" * 40)
     [repo] = await _all(sessionmaker, Repository)
     assert repo.default_branch == "main"
-    assert [(j.pull_request_id, j.head_sha, j.trigger) for j in dispatcher.jobs] == [
-        (pr.id, "a" * 40, "opened")
-    ]
+    # A queued run row is created first; the worker only receives its id.
+    [run] = await _all(sessionmaker, ReviewRun)
+    assert (run.pull_request_id, run.status, run.trigger, run.mode) == (
+        pr.id, "queued", "opened", "full",
+    )  # fmt: skip
+    assert (run.head_sha, run.base_sha) == ("a" * 40, "b" * 40)
+    assert [job.run_id for job in dispatcher.jobs] == [run.id]
     delivery = await _delivery(sessionmaker, "pr-1")
     assert delivery is not None and delivery.status == "queued"
 
@@ -209,6 +215,28 @@ async def test_draft_pull_request_is_stored_but_not_reviewed(
     assert dispatcher.jobs == []
 
 
+async def test_drafts_reviewed_when_cached_config_allows(
+    api: httpx.AsyncClient, sessionmaker: Sessions, dispatcher: RecordingDispatcher
+) -> None:
+    await send_webhook(api, "installation", load_webhook("installation_created"))
+    [repo, *_] = await _all(sessionmaker, Repository)
+    async with sessionmaker() as session:
+        await repo_configs.save(
+            session,
+            repository_id=repo.id,
+            commit_sha="d" * 40,
+            raw_yaml="review_drafts: true",
+            parsed=parse_repo_config("review_drafts: true"),
+        )
+        await session.commit()
+
+    payload = load_webhook("pull_request_opened")
+    payload["pull_request"]["draft"] = True
+    response = await send_webhook(api, "pull_request", payload)
+    assert response.json() == {"status": "queued"}
+    assert len(dispatcher.jobs) == 1
+
+
 async def test_disabled_repository_is_not_reviewed(
     api: httpx.AsyncClient, sessionmaker: Sessions, dispatcher: RecordingDispatcher
 ) -> None:
@@ -234,7 +262,25 @@ async def test_new_commits_update_head_sha(
 
     [pr] = await _all(sessionmaker, PullRequest)
     assert pr.head_sha == "c" * 40
-    assert len(dispatcher.jobs) == 1  # only the "opened" review; incremental is Phase 4
+    # Each push queues a review of the new head (incremental mode arrives in Phase 4).
+    runs = await _all(sessionmaker, ReviewRun)
+    assert [(r.trigger, r.head_sha) for r in runs] == [
+        ("opened", "a" * 40),
+        ("synchronize", "c" * 40),
+    ]
+    assert len(dispatcher.jobs) == 2
+
+
+async def test_closing_a_pr_skips_its_queued_reviews(
+    api: httpx.AsyncClient, sessionmaker: Sessions
+) -> None:
+    await send_webhook(api, "pull_request", load_webhook("pull_request_opened"))
+    closed = load_webhook("pull_request_opened") | {"action": "closed"}
+    closed["pull_request"] |= {"state": "closed"}
+    await send_webhook(api, "pull_request", closed)
+
+    [run] = await _all(sessionmaker, ReviewRun)
+    assert (run.status, run.skip_reason) == ("skipped", "pr_closed")
 
 
 async def test_merged_pull_request_state(api: httpx.AsyncClient, sessionmaker: Sessions) -> None:
