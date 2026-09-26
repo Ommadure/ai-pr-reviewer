@@ -134,7 +134,12 @@ async def test_head_moving_during_the_review_blocks_posting(
 ) -> None:
     class PushDuringReview(FakeLLMProvider):
         async def complete(
-            self, messages: list[Message], *, model: str, temperature: float
+            self,
+            messages: list[Message],
+            *,
+            model: str,
+            temperature: float,
+            max_output_tokens: int | None = None,
         ) -> Completion:
             async with sessionmaker() as session:  # a synchronize webhook lands mid-review
                 await session.execute(update(PullRequest).values(head_sha="c" * 40))

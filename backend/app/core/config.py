@@ -9,9 +9,10 @@ import base64
 import binascii
 from functools import lru_cache
 from typing import Literal, Self
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from cryptography.fernet import Fernet
-from pydantic import SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 AppEnv = Literal["development", "test", "production"]
@@ -64,6 +65,10 @@ class ReviewSettings(BaseSettings):
     review_max_input_tokens: int = 60_000
     review_max_chunk_tokens: int = 12_000
     review_max_concurrent_llm_calls: int = 2
+    review_max_output_tokens: int = Field(default=8_192, ge=256)  # per LLM call
+    # Per review run, in USD. Calls whose worst-case cost would cross it are skipped.
+    # Only priced models (LLM_PRICING) cost anything, so free tiers never hit it.
+    review_max_cost_usd: float | None = Field(default=None, gt=0)
 
 
 class Settings(ReviewSettings):
@@ -88,9 +93,24 @@ class Settings(ReviewSettings):
     # Override when the public callback differs from APP_BASE_URL (e.g. a Vercel rewrite).
     oauth_callback_url: str = ""
 
-    sentry_dsn: str = ""
+    sentry_dsn: str = ""  # empty: Sentry off
+    sentry_traces_sample_rate: float = Field(default=0.0, ge=0, le=1)
+
+    # Redis command budget. An idle worker's queue poll (BRPOP) and its Flower
+    # events are most of its Redis traffic; per-command hosts (Upstash) bill that.
+    # BRPOP returns as soon as a task arrives, so a longer poll adds no latency.
+    celery_poll_seconds: int = Field(default=1, ge=1, le=60)
+    celery_task_events: bool = True  # live task events for Flower; off in production
+    # Health URL of an API that sleeps when idle (Render free); the worker pings it.
+    keep_warm_url: str = ""
+
     # Linked from `/reviewpilot help` replies.
     docs_url: str = "https://github.com/Ommadure/ai-pr-reviewer#configuration"
+
+    @field_validator("database_url")
+    @classmethod
+    def _asyncpg_url(cls, value: str) -> str:
+        return normalize_database_url(value)
 
     @model_validator(mode="after")
     def _fail_fast_on_missing_values(self) -> Self:
@@ -151,6 +171,25 @@ class Settings(ReviewSettings):
         if "PRIVATE KEY-----" not in pem:
             raise ValueError("GITHUB_APP_PRIVATE_KEY_B64 does not decode to a PEM private key")
         return pem
+
+
+def normalize_database_url(url: str) -> str:
+    """Accept the URL a host hands out (Neon, Render, Heroku-style) as-is.
+
+    `postgres://…?sslmode=require&channel_binding=require` becomes
+    `postgresql+asyncpg://…?ssl=require`: asyncpg needs its own driver name, spells the
+    TLS option `ssl`, and rejects `channel_binding`.
+    """
+    parts = urlsplit(url)
+    if parts.scheme not in ("postgres", "postgresql"):
+        return url  # already has a driver (postgresql+asyncpg), or empty
+    query = []
+    for key, value in parse_qsl(parts.query):
+        if key == "sslmode":
+            query.append(("ssl", value))
+        elif key != "channel_binding":
+            query.append((key, value))
+    return urlunsplit(parts._replace(scheme="postgresql+asyncpg", query=urlencode(query)))
 
 
 def _is_set(value: object) -> bool:

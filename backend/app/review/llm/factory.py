@@ -47,6 +47,8 @@ def review_budget(settings: ReviewSettings) -> ReviewBudget:
         max_input_tokens=settings.review_max_input_tokens,
         max_chunk_tokens=settings.review_max_chunk_tokens,
         max_concurrent_llm_calls=settings.review_max_concurrent_llm_calls,
+        max_output_tokens=settings.review_max_output_tokens,
+        max_cost_usd=settings.review_max_cost_usd,
     )
 
 

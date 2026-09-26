@@ -42,7 +42,12 @@ class FakeLLMProvider(BaseProvider):
         self.calls: list[list[Message]] = []
 
     async def complete(
-        self, messages: list[Message], *, model: str, temperature: float
+        self,
+        messages: list[Message],
+        *,
+        model: str,
+        temperature: float,
+        max_output_tokens: int | None = None,
     ) -> Completion:
         self.calls.append(messages)
         if self._script:

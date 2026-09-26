@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
+from app.core.logging import bind_context
 from app.db.session import get_session
 from app.github.signatures import is_valid_signature
 from app.repositories import deliveries
@@ -37,19 +38,24 @@ async def github_webhook(
     body = await _read_body(request)
     delivery_id = request.headers.get("x-github-delivery")
     event = request.headers.get("x-github-event")
-    logger = log.bind(delivery_id=delivery_id, github_event=event)
+    bind_context(delivery_id=delivery_id, github_event=event)
 
     # 1. Authenticity first: nothing below runs for an unsigned request.
     secret = settings.github_webhook_secret.get_secret_value()
     if not is_valid_signature(secret, body, request.headers.get("x-hub-signature-256")):
-        logger.warning("webhook.invalid_signature")  # never log the body
+        log.warning("webhook.invalid_signature")  # never log the body
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid signature")
     if not delivery_id or not event:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Missing GitHub delivery headers")
     payload = _parse_json(body)
     action = payload.get("action") if isinstance(payload.get("action"), str) else None
     installation_id = (payload.get("installation") or {}).get("id")
-    logger = logger.bind(action=action, github_installation_id=installation_id)
+    bind_context(
+        action=action,
+        github_installation_id=installation_id,
+        repo=(payload.get("repository") or {}).get("full_name"),
+        pr=(payload.get("pull_request") or payload.get("issue") or {}).get("number"),
+    )
 
     # 2. Dedupe: GitHub may deliver the same event more than once.
     claimed = await deliveries.try_claim(
@@ -61,7 +67,7 @@ async def github_webhook(
     )
     if not claimed:
         await session.rollback()
-        logger.info("webhook.duplicate")
+        log.info("webhook.duplicate")
         return JSONResponse({"status": "duplicate"}, status_code=status.HTTP_200_OK)
 
     # 3. Route + record, in one transaction: either all of it is saved or none.
@@ -82,7 +88,7 @@ async def github_webhook(
             error=f"{type(exc).__name__}: {exc}"[:1000],
         )
         await session.commit()
-        logger.exception("webhook.processing_failed")
+        log.exception("webhook.processing_failed")
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, "Processing failed") from exc
 
     # 4. Enqueue only after commit, so the worker can read the rows we just wrote.
@@ -96,10 +102,10 @@ async def github_webhook(
     except Exception as exc:
         await deliveries.set_status(session, delivery_id, "failed", error="enqueue_failed")
         await session.commit()
-        logger.exception("webhook.enqueue_failed")
+        log.exception("webhook.enqueue_failed")
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Queue unavailable") from exc
 
-    logger.info("webhook.handled", status=outcome.status, ignore_reason=outcome.ignore_reason)
+    log.info("webhook.handled", status=outcome.status, ignore_reason=outcome.ignore_reason)
     status_code = status.HTTP_200_OK if event == "ping" else status.HTTP_202_ACCEPTED
     return JSONResponse({"status": outcome.status}, status_code=status_code)
 

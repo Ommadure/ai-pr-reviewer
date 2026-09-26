@@ -18,6 +18,7 @@ dependencies = [
     "pyjwt[crypto]>=2.10",
     "pyyaml>=6.0",
     "cryptography>=45",
+    "sentry-sdk>=2.0",
 ]
 
 [dependency-groups]

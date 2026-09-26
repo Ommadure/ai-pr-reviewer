@@ -74,7 +74,13 @@ class LLMProvider(Protocol):
     name: str
 
     async def generate_structured[T: BaseModel](
-        self, messages: list[Message], schema: type[T], *, model: str, temperature: float
+        self,
+        messages: list[Message],
+        schema: type[T],
+        *,
+        model: str,
+        temperature: float,
+        max_output_tokens: int | None = None,
     ) -> LLMResult[T]: ...
 
 
@@ -85,13 +91,26 @@ class BaseProvider(ABC):
 
     @abstractmethod
     async def complete(
-        self, messages: list[Message], *, model: str, temperature: float
+        self,
+        messages: list[Message],
+        *,
+        model: str,
+        temperature: float,
+        max_output_tokens: int | None = None,
     ) -> Completion: ...
 
     async def generate_structured[T: BaseModel](
-        self, messages: list[Message], schema: type[T], *, model: str, temperature: float
+        self,
+        messages: list[Message],
+        schema: type[T],
+        *,
+        model: str,
+        temperature: float,
+        max_output_tokens: int | None = None,
     ) -> LLMResult[T]:
-        completion = await self.complete(messages, model=model, temperature=temperature)
+        completion = await self.complete(
+            messages, model=model, temperature=temperature, max_output_tokens=max_output_tokens
+        )
         try:
             output = parse_json_output(completion.text, schema)
         except ValueError as exc:

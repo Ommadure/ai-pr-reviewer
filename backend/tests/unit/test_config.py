@@ -115,3 +115,21 @@ def test_server_needs_llm_model_and_key() -> None:
     with pytest.raises(ValidationError, match="LLM_MODEL, GEMINI_API_KEY"):
         Settings(**_complete_dev_settings(llm_model="", gemini_api_key=""))  # type: ignore[arg-type]
     Settings(**_complete_dev_settings(llm_provider="fake", llm_model="", gemini_api_key=""))  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("given", "expected"),
+    [
+        # Neon's connection string, pasted as-is (password with an escaped @).
+        (
+            "postgresql://u:p%40ss@ep-x.ap-southeast-1.aws.neon.tech/neondb"
+            "?sslmode=require&channel_binding=require",
+            "postgresql+asyncpg://u:p%40ss@ep-x.ap-southeast-1.aws.neon.tech/neondb?ssl=require",
+        ),
+        ("postgres://u:p@h:5432/d", "postgresql+asyncpg://u:p@h:5432/d"),
+        # Already asyncpg: untouched.
+        ("postgresql+asyncpg://a:b@localhost/x", "postgresql+asyncpg://a:b@localhost/x"),
+    ],
+)
+def test_hosted_database_urls_are_normalized_for_asyncpg(given: str, expected: str) -> None:
+    assert Settings(app_env="test", database_url=given).database_url == expected

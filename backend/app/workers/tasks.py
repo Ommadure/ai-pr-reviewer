@@ -4,9 +4,11 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import httpx
 import structlog
 from celery import Task
 
+from app.core.logging import bind_context
 from app.github.client import GitHubError, GitHubRateLimited
 from app.repositories import deliveries, review_runs
 from app.services.commands import CommandJob, handle_command
@@ -29,6 +31,19 @@ QUEUED_TIMEOUT = timedelta(minutes=30)
 DELIVERY_RETENTION = timedelta(days=30)
 
 
+@celery_app.task(name="app.workers.tasks.keep_api_warm")
+def keep_api_warm(url: str) -> int | None:
+    """Ping the API so a free host never puts it to sleep (beat: every 10 min, if set)."""
+    try:
+        response = httpx.get(url, timeout=90)  # a cold start can take about a minute
+    except httpx.HTTPError as exc:
+        log.warning("keep_warm.failed", error=type(exc).__name__)
+        return None  # next tick tries again; no retries needed
+    if response.status_code != 200:
+        log.warning("keep_warm.unhealthy", status=response.status_code)
+    return response.status_code
+
+
 @celery_app.task(name="app.workers.tasks.ping")
 def ping() -> str:
     return "pong"
@@ -36,7 +51,8 @@ def ping() -> str:
 
 @celery_app.task(name="app.workers.tasks.review_pull_request", bind=True, max_retries=5)
 def review_pull_request(self: Task, run_id: int) -> str:
-    logger = log.bind(run_id=run_id, attempt=self.request.retries + 1)
+    bind_context(run_id=run_id, attempt=self.request.retries + 1)
+    logger = log
     final_attempt = self.request.retries >= self.max_retries
     try:
         outcome = asyncio.run(_review(run_id, final_attempt=final_attempt))

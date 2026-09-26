@@ -56,12 +56,17 @@ class GeminiProvider(BaseProvider):
         self._sleep = sleep
 
     async def complete(
-        self, messages: list[Message], *, model: str, temperature: float
+        self,
+        messages: list[Message],
+        *,
+        model: str,
+        temperature: float,
+        max_output_tokens: int | None = None,
     ) -> Completion:
         if not MODEL_NAME.fullmatch(model):
             raise LLMError(f"invalid model name {model!r}")
         url = f"{self._base_url}/models/{model}:generateContent"
-        body = _request_body(messages, temperature)
+        body = _request_body(messages, temperature, max_output_tokens)
         # The key goes in a header, never the URL, so it can't end up in access logs.
         headers = {"x-goog-api-key": self._api_key}
 
@@ -117,7 +122,9 @@ def _since(started: float) -> int:
     return int((time.monotonic() - started) * 1000)
 
 
-def _request_body(messages: list[Message], temperature: float) -> dict[str, Any]:
+def _request_body(
+    messages: list[Message], temperature: float, max_output_tokens: int | None = None
+) -> dict[str, Any]:
     system = "\n\n".join(m.content for m in messages if m.role == "system")
     contents = [
         {"role": "model" if m.role == "assistant" else "user", "parts": [{"text": m.content}]}
@@ -128,6 +135,9 @@ def _request_body(messages: list[Message], temperature: float) -> dict[str, Any]
         "contents": contents,
         "generationConfig": {"temperature": temperature, "responseMimeType": "application/json"},
     }
+    if max_output_tokens:
+        # A hard ceiling on what one call can bill (and on a runaway response).
+        body["generationConfig"]["maxOutputTokens"] = max_output_tokens
     if system:
         body["systemInstruction"] = {"parts": [{"text": system}]}
     return body
