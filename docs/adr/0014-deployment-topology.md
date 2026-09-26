@@ -1,6 +1,6 @@
 # ADR 0014: Production deployment on Render, Neon, Upstash and Vercel
 
-- **Status:** Accepted
+- **Status:** Accepted. The Render compute part is superseded by [ADR 0015](0015-oracle-always-free-vm.md) (Oracle Always Free VM); Neon, Upstash, Vercel and the Redis budget still apply.
 - **Date:** 2026-09-26
 
 ## Context
