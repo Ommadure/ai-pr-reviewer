@@ -6,7 +6,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://reviewpilot-api.onrender.com/api/:path*"
+      "destination": "https://reviewpilot-om.duckdns.org/api/:path*"
     },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
