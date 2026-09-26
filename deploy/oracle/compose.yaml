@@ -1,7 +1,7 @@
 # Production on one VM (ADR 0015, docs/deploy.md): Caddy (HTTPS) → API; worker with the
 # single embedded beat. Postgres is Neon and Redis is Upstash, both external over TLS.
 #
-#   deploy/oracle/deploy.sh      # build + (re)start; it passes --env-file .env.production
+#   deploy/oracle/deploy.sh      # build + (re)start; links .env -> .env.production
 #
 # Secrets live in deploy/oracle/.env.production on the VM (never committed).
 

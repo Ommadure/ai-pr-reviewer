@@ -14,6 +14,9 @@ if [ ! -f "$ENV_FILE" ]; then
   exit 1
 fi
 chmod 600 "$ENV_FILE" # secrets: readable by this user only
+# Compose reads deploy/oracle/.env by itself, so plain `docker compose -f … ps/logs`
+# can resolve API_DOMAIN too. A symlink, so there's still only one secrets file.
+ln -sfn .env.production deploy/oracle/.env
 
 git pull --ff-only
 "${COMPOSE[@]}" up -d --build --remove-orphans
