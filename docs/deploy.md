@@ -104,7 +104,12 @@ The first build takes a few minutes. Caddy then fetches the HTTPS certificate by
 ```bash
 curl -s https://reviewpilot-om.duckdns.org/api/v1/ready
 ```
-You should see `{"status":"ok","checks":{"database":"ok","redis":"ok"}}`.
+You should see `{"status":"ok","checks":{"database":"ok","redis":"ok"}}`. After a quiet spell, the first check takes a few seconds, because Neon's free tier suspends the database after 5 idle minutes and the check waits for it to wake.
+
+If a check says `error`, the API log says which one and why (`ready.check_failed`, with the error type):
+```bash
+docker compose -f ~/ai-pr-reviewer/deploy/oracle/compose.yaml logs api | grep ready.check_failed
+```
 
 ## 6. Point the dashboard and the GitHub App at the VM
 **Vercel.** In `frontend/vercel.json`, change the `/api` rewrite's `destination` to your API:

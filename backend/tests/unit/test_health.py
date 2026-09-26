@@ -1,6 +1,11 @@
+import asyncio
+from typing import Any
+
 import httpx
+import pytest
 from fastapi import FastAPI
 
+from app.api.v1.routes import health
 from app.api.v1.routes.health import ReadinessCheck, get_readiness_checks
 
 
@@ -38,3 +43,36 @@ async def test_not_ready_when_a_dependency_fails(app: FastAPI, client: httpx.Asy
     assert body["checks"] == {"database": "ok", "redis": "error"}
     # Error details are not leaked to unauthenticated callers.
     assert "redis down" not in response.text
+
+
+async def test_each_check_has_its_own_timeout_and_failures_are_logged(
+    app: FastAPI, client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A slow first connection (a waking Neon database) isn't reported as down."""
+
+    async def _slow() -> None:
+        await asyncio.sleep(0.05)
+
+    class _Recorder:
+        def __init__(self) -> None:
+            self.warnings: list[tuple[str, dict[str, Any]]] = []
+
+        def warning(self, event: str, **fields: Any) -> None:
+            self.warnings.append((event, fields))
+
+    recorder = _Recorder()
+    monkeypatch.setattr(health, "log", recorder)
+    monkeypatch.setattr(health, "CHECK_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(health, "CHECK_TIMEOUTS_SECONDS", {"database": 1.0})
+    _override(app, {"database": _slow, "redis": _slow})
+
+    response = await client.get("/api/v1/ready")
+
+    assert response.json()["checks"] == {"database": "ok", "redis": "error"}
+    assert [(event, f["check"], f["error"]) for event, f in recorder.warnings] == [
+        ("ready.check_failed", "redis", "TimeoutError")
+    ]
+
+
+def test_the_database_gets_time_to_wake_up() -> None:
+    assert health.CHECK_TIMEOUTS_SECONDS["database"] >= 5
