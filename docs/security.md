@@ -37,11 +37,11 @@ This is the checklist from the spec (section 18), reviewed in Phase 7 on 2026-09
 
 (Phase 6's eval also found and fixed a crash on any diff containing `{{`, a robustness bug that affected React code.)
 
-## Production hardening (ADR 0014)
+## Production hardening (ADR 0014, ADR 0015)
 - **TLS everywhere:**
   - Neon `ssl=require`;
   - Upstash `rediss://` with `CERT_REQUIRED`;
-  - Render and Vercel terminate HTTPS, and uvicorn trusts the proxy headers so cookies are `Secure`.
+  - Caddy on the VM (automatic Let's Encrypt, HTTP→HTTPS redirect, HSTS) and Vercel terminate HTTPS, and uvicorn trusts the proxy headers so cookies are `Secure`.
 - **Dashboard headers** (`frontend/vercel.json`):
   - a strict CSP (scripts: `self` plus the SHA-256 of the one inline theme script, kept in sync by `frontend/deploy.test.ts`);
   - `frame-ancestors 'none'`, HSTS, `nosniff`, `Referrer-Policy` and `Permissions-Policy`.
@@ -49,6 +49,12 @@ This is the checklist from the spec (section 18), reviewed in Phase 7 on 2026-09
   - no interactive docs in production (`/docs` returns 404);
   - no CORS (same-origin through the Vercel rewrite);
   - the request id is taken from a header only if it's safe (1–64 characters from `[A-Za-z0-9._-]`), so it can't be used for log injection.
+- **VM** (`deploy/oracle/`):
+  - the API container isn't published, so only Caddy can reach it;
+  - only ports 22, 80 and 443 are open, in both the cloud Security List and the VM's iptables;
+  - SSH is key-only, and OS security updates install automatically;
+  - containers run as a non-root user, with memory caps and rotated logs;
+  - the repo is cloned with a read-only deploy key, and the secrets file is `chmod 600` and git-ignored.
 
 ## Known limitations
 - **Any member can toggle repositories.** Anyone who can see an installation can turn automatic reviews on or off for its repositories (ADR 0012). Restricting that to admins needs a per-repository permission check.

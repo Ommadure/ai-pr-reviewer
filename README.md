@@ -2,7 +2,7 @@
 
 A GitHub App that reviews pull requests with an LLM. When a PR is opened or updated, ReviewPilot reads the diff and posts **one** review with inline comments on the exact changed lines. Each comment is validated against the diff, stripped of anything unsafe, and deduplicated across pushes. A dashboard shows every review's cost, latency and whether people found it useful. An offline eval harness measures precision and recall on 30 labelled PRs, so prompt changes are judged on evidence.
 
-**Stack:** FastAPI · Celery + Redis · PostgreSQL · Gemini (provider-agnostic) · React + TanStack Query · deployed on Render, Neon, Upstash and Vercel.
+**Stack:** FastAPI · Celery + Redis · PostgreSQL · Gemini (provider-agnostic) · React + TanStack Query · deployed for $0 on an Oracle Cloud VM (Docker + Caddy), Neon, Upstash and Vercel.
 
 ## Demo
 
@@ -19,19 +19,20 @@ flowchart LR
     subgraph Vercel
         UI[React dashboard]
     end
-    subgraph Render
+    subgraph VM[Oracle Cloud VM · Docker Compose]
+        C[Caddy<br/>HTTPS]
         API[FastAPI API<br/>webhooks · dashboard API]
         W[Celery worker<br/>orchestrator + the one beat]
+        C --> API
     end
-    GH -- signed webhook --> API
-    UI -- /api/* rewrite --> API
+    GH -- signed webhook --> C
+    UI -- /api/* rewrite --> C
     API -- enqueue run_id --> R[(Upstash Redis<br/>broker · locks · caches)]
     R --> W
     W -- one COMMENT review --> GH
     W -- structured JSON --> LLM[Gemini]
     API --> PG[(Neon Postgres)]
     W --> PG
-    W -. keep-warm ping .-> API
 ```
 
 ```mermaid
@@ -84,7 +85,12 @@ The full checklist, with code and test evidence for every item, is in [docs/secu
 
 ## Deploying
 
-Render (API free + worker about $7 a month), Neon, Upstash and Vercel. The step-by-step guide is in [docs/deploy.md](docs/deploy.md), and the reasoning, including the measured Redis command budget, is in [ADR 0014](docs/adr/0014-deployment-topology.md). `render.yaml` and `frontend/vercel.json` hold the whole configuration.
+Everything runs on free tiers:
+- **Backend:** one Oracle Cloud Always Free VM running the API, the worker with its one beat, and Caddy for HTTPS (`deploy/oracle/`).
+- **Data:** Neon Postgres and Upstash Redis, both over TLS.
+- **Dashboard:** Vercel (`frontend/vercel.json`).
+
+The step-by-step guide is in [docs/deploy.md](docs/deploy.md). The reasoning is in [ADR 0015](docs/adr/0015-oracle-always-free-vm.md) (the VM) and [ADR 0014](docs/adr/0014-deployment-topology.md) (regions, the measured Redis command budget, the Vercel rewrite). A Render alternative with a paid worker lives in `render.yaml`.
 
 ## Local setup
 
@@ -214,3 +220,4 @@ uv run python ../evals/compare.py ../evals/results/A.json ../evals/results/B.jso
   - [0012 Dashboard login, sessions and tenancy](docs/adr/0012-dashboard-auth-and-tenancy.md)
   - [0013 Eval matching rule](docs/adr/0013-eval-matching-rule.md)
   - [0014 Deployment topology](docs/adr/0014-deployment-topology.md)
+  - [0015 Oracle Cloud Always Free VM](docs/adr/0015-oracle-always-free-vm.md)

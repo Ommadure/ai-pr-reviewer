@@ -1,0 +1,78 @@
+# Production on one VM (ADR 0015, docs/deploy.md): Caddy (HTTPS) → API; worker with the
+# single embedded beat. Postgres is Neon and Redis is Upstash, both external over TLS.
+#
+#   deploy/oracle/deploy.sh      # build + (re)start; it passes --env-file .env.production
+#
+# Secrets live in deploy/oracle/.env.production on the VM (never committed).
+
+name: reviewpilot
+
+x-backend: &backend
+  build: ../../backend
+  image: reviewpilot-backend:latest
+  env_file: .env.production
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" } # logs can't fill the disk
+
+services:
+  api:
+    <<: *backend
+    # One API container, so migrating on start can't race. Only Caddy can reach it:
+    # it's on the compose network and never published, so trusting proxy headers is safe.
+    command: >-
+      sh -c "alembic upgrade head &&
+      exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"
+    expose: ["8000"]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health', timeout=3)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s # migrations run first
+    mem_limit: 384m
+
+  worker:
+    <<: *backend
+    # -B embeds celery beat: this is the ONLY beat. Never run a second worker container
+    # with -B, or every scheduled job runs twice (ADR 0014/0015).
+    command: >-
+      celery -A app.workers.celery_app worker -B -s /tmp/celerybeat-schedule
+      -Q reviews,default,feedback --concurrency 2
+      --without-heartbeat --without-gossip --without-mingle --loglevel INFO
+    depends_on:
+      api:
+        condition: service_healthy # the schema is migrated before any task runs
+    mem_limit: 512m
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80" # Let's Encrypt HTTP challenge + redirect to HTTPS
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN in deploy/oracle/.env.production}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data # certificates survive restarts (Let's Encrypt rate limits)
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    mem_limit: 128m
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  caddy_data:
+  caddy_config:
