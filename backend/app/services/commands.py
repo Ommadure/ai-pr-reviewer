@@ -21,6 +21,7 @@ import structlog
 from sqlalchemy import func, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.logging import bind_context
 from app.core.rate_limit import RateLimiter, manual_review_key
 from app.github import events
 from app.github.app_auth import GitHubAppAuth
@@ -92,7 +93,8 @@ def help_text(docs_url: str = "") -> str:
 async def handle_command(deps: CommandDeps, job: CommandJob) -> str:
     owner, name = job.repo_full_name.split("/", 1)
     github = deps.github_auth.installation_client(job.installation_id)
-    logger = log.bind(repo=job.repo_full_name, pr=job.pr_number, command=job.command)
+    bind_context(repo=job.repo_full_name, pr=job.pr_number, command=job.command)
+    logger = log
 
     async def reply(body: str) -> None:
         await github.create_issue_comment(owner, name, job.pr_number, body)

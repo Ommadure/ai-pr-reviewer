@@ -192,3 +192,13 @@ async def test_gemini_rejects_odd_model_names(gemini: GeminiProvider) -> None:
         await gemini.generate_structured(
             MESSAGES, FileReviewOutput, model="../../v1/x", temperature=0
         )
+
+
+@respx.mock
+async def test_gemini_caps_output_tokens_when_asked(gemini: GeminiProvider) -> None:
+    route = respx.post(URL).mock(return_value=_gemini_response(json.dumps(VALID)))
+    await gemini.generate_structured(
+        MESSAGES, FileReviewOutput, model=MODEL, temperature=0.1, max_output_tokens=2048
+    )
+    body = json.loads(route.calls[0].request.content)
+    assert body["generationConfig"]["maxOutputTokens"] == 2048

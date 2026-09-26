@@ -51,6 +51,29 @@ TEMPERATURE = 0.1  # low: we want consistent, conservative reviews, not creativi
 class _CallOutcome:
     records: list[LLMCallRecord] = field(default_factory=list)
     error: str | None = None
+    skip_reason: str = "llm_error"
+
+
+class CostGuard:
+    """Keeps a run under `cap` dollars, even with calls running concurrently.
+
+    Before a call starts, its worst case (estimated input + the full output ceiling)
+    is reserved; afterwards the reservation is swapped for the real cost. A call that
+    doesn't fit is never made. Unpriced models cost 0, so only the token caps apply.
+    """
+
+    def __init__(self, cap: float | None) -> None:
+        self.cap = cap
+        self.committed = 0.0
+
+    def reserve(self, amount: float) -> bool:
+        if self.cap is not None and self.committed + amount > self.cap:
+            return False
+        self.committed += amount
+        return True
+
+    def settle(self, reserved: float, actual: float) -> None:
+        self.committed += actual - reserved
 
 
 @dataclass
@@ -104,6 +127,7 @@ async def run_review(
 
     # Map: one LLM call per chunk, at most N in flight (free tiers have low rate limits).
     semaphore = asyncio.Semaphore(budget.max_concurrent_llm_calls)
+    guard = CostGuard(budget.max_cost_usd)
 
     async def review_chunk(chunk: Chunk) -> _ChunkOutcome:
         messages = prompt_builder.build_review_messages(
@@ -111,7 +135,14 @@ async def run_review(
         )
         async with semaphore:
             output, call = await _structured_call(
-                llm, messages, FileReviewOutput, model=model, purpose="file_review", prices=prices
+                llm,
+                messages,
+                FileReviewOutput,
+                model=model,
+                purpose="file_review",
+                prices=prices,
+                guard=guard,
+                max_output_tokens=budget.max_output_tokens,
             )
         return _ChunkOutcome(chunk, output, call)
 
@@ -128,7 +159,7 @@ async def run_review(
         paths = [file.path for file in outcome.chunk.files]
         if outcome.output is None:
             errors.append(outcome.call.error or "file_review failed")
-            skipped += [SkippedFile(path, "llm_error") for path in paths]
+            skipped += [SkippedFile(path, outcome.call.skip_reason) for path in paths]
             continue
         reviewed_paths.update(paths)
         kept, rejected = validate_llm_comments(outcome.output.comments, outcome.chunk.files, config)
@@ -163,6 +194,8 @@ async def run_review(
             model=summary_model or model,
             purpose="summary",
             prices=prices,
+            guard=guard,
+            max_output_tokens=budget.max_output_tokens,
         )
         llm_calls += call.records
         if call.error:
@@ -190,40 +223,76 @@ async def _structured_call[T: BaseModel](
     model: str,
     purpose: LLMCallPurpose,
     prices: PriceTable,
+    guard: CostGuard | None = None,
+    max_output_tokens: int | None = None,
 ) -> tuple[T | None, _CallOutcome]:
-    """One call, plus exactly one repair attempt if the output is invalid."""
+    """One call, plus exactly one repair attempt if the output is invalid.
+
+    With a guard, each call first reserves its worst-case cost; a call that would push
+    the run over its cost cap is not made at all.
+    """
     outcome = _CallOutcome()
+    guard = guard or CostGuard(None)
+
+    def worst_case(msgs: list[Message]) -> float:
+        prompt_tokens = estimate_tokens("\n".join(m.content for m in msgs))
+        return prices.cost_usd(model, TokenUsage(prompt_tokens, max_output_tokens or 0))
+
+    def over_budget() -> tuple[None, _CallOutcome]:
+        outcome.error = f"{purpose}: skipped, the run's cost cap would be exceeded"
+        outcome.skip_reason = "cost_cap"
+        return None, outcome
+
+    reserved = worst_case(messages)
+    if not guard.reserve(reserved):
+        return over_budget()
     try:
         result = await llm.generate_structured(
-            messages, schema, model=model, temperature=TEMPERATURE
+            messages,
+            schema,
+            model=model,
+            temperature=TEMPERATURE,
+            max_output_tokens=max_output_tokens,
         )
     except LLMInvalidOutput as invalid:
+        guard.settle(reserved, prices.cost_usd(model, invalid.usage))
         outcome.records.append(
             _record(
                 purpose, model, prices, invalid.usage, invalid.latency_ms, error="invalid_output"
             )
         )
         repair = prompt_builder.build_repair_messages(messages, invalid.raw_text, invalid.problem)
+        reserved = worst_case(repair)
+        if not guard.reserve(reserved):
+            return over_budget()
         try:
             result = await llm.generate_structured(
-                repair, schema, model=model, temperature=TEMPERATURE
+                repair,
+                schema,
+                model=model,
+                temperature=TEMPERATURE,
+                max_output_tokens=max_output_tokens,
             )
         except LLMError as exc:
+            guard.settle(reserved, prices.cost_usd(model, exc.usage))
             outcome.records.append(
                 _record("repair", model, prices, exc.usage, exc.latency_ms, error=str(exc))
             )
             outcome.error = f"{purpose}: output still invalid after repair ({exc})"
             return None, outcome
+        guard.settle(reserved, prices.cost_usd(result.model, result.usage))
         outcome.records.append(
             _record("repair", result.model, prices, result.usage, result.latency_ms)
         )
         return result.output, outcome
     except LLMError as exc:
+        guard.settle(reserved, prices.cost_usd(model, exc.usage))
         outcome.records.append(
             _record(purpose, model, prices, exc.usage, exc.latency_ms, error=str(exc))
         )
         outcome.error = f"{purpose}: {exc}"
         return None, outcome
+    guard.settle(reserved, prices.cost_usd(result.model, result.usage))
     outcome.records.append(_record(purpose, result.model, prices, result.usage, result.latency_ms))
     return result.output, outcome
 

@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Weekly, so a newly published vulnerability in a pinned dependency is noticed
+  # even when nobody pushes.
+  schedule:
+    - cron: "17 3 * * 1"
 
 # Cancel a previous run on the same branch when new commits arrive.
 concurrency:
@@ -51,6 +55,11 @@ jobs:
       - name: Test
         # No GitHub or LLM calls: GitHub is mocked with respx, APP_ENV=test is set in conftest.
         run: uv run pytest
+      - name: Audit dependencies
+        # Exactly what the production image installs (uv.lock, no dev tools), hash-pinned.
+        run: |
+          uv export --frozen --no-dev --no-emit-project --format requirements-txt > "$RUNNER_TEMP/requirements.txt"
+          uvx pip-audit@2.10.1 --disable-pip -r "$RUNNER_TEMP/requirements.txt"
 
   frontend:
     runs-on: ubuntu-latest
@@ -69,3 +78,5 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - name: Audit dependencies
+        run: npm audit --omit=dev --audit-level=high

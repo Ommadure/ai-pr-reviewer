@@ -1,8 +1,90 @@
 # ReviewPilot
 
-A GitHub App that reviews pull requests with an LLM. It posts validated inline comments on the exact changed lines, and a React dashboard tracks review history, cost, and how useful the comments are.
+A GitHub App that reviews pull requests with an LLM. When a PR is opened or updated, ReviewPilot reads the diff and posts **one** review with inline comments on the exact changed lines. Each comment is validated against the diff, stripped of anything unsafe, and deduplicated across pushes. A dashboard shows every review's cost, latency and whether people found it useful. An offline eval harness measures precision and recall on 30 labelled PRs, so prompt changes are judged on evidence.
 
-> 🚧 In progress: **Phase 5**: the dashboard. The full README (demo, eval results, metrics) comes in Phase 7.
+**Stack:** FastAPI · Celery + Redis · PostgreSQL · Gemini (provider-agnostic) · React + TanStack Query · deployed on Render, Neon, Upstash and Vercel.
+
+## Demo
+
+<!-- Record with the GitHub App on your test repo: open a PR, wait for the check, then the dashboard. -->
+*A demo GIF and a screenshot of a real inline review will go here once production is live (see [docs/deploy.md](docs/deploy.md)).*
+
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph GitHub
+        GH[Pull requests<br/>check runs]
+    end
+    subgraph Vercel
+        UI[React dashboard]
+    end
+    subgraph Render
+        API[FastAPI API<br/>webhooks · dashboard API]
+        W[Celery worker<br/>orchestrator + the one beat]
+    end
+    GH -- signed webhook --> API
+    UI -- /api/* rewrite --> API
+    API -- enqueue run_id --> R[(Upstash Redis<br/>broker · locks · caches)]
+    R --> W
+    W -- one COMMENT review --> GH
+    W -- structured JSON --> LLM[Gemini]
+    API --> PG[(Neon Postgres)]
+    W --> PG
+    W -. keep-warm ping .-> API
+```
+
+```mermaid
+sequenceDiagram
+    participant GH as GitHub
+    participant API as API /webhooks/github
+    participant DB as Postgres
+    participant Q as Redis
+    participant W as Worker
+    participant LLM as LLM
+    GH->>API: pull_request opened / synchronize (signed)
+    API->>API: verify HMAC · dedupe delivery id
+    API->>DB: upsert PR · review_run (queued) · commit
+    API->>Q: review_pull_request(run_id)
+    API-->>GH: 202 in milliseconds
+    Q->>W: task
+    W->>Q: per-PR lock
+    W->>GH: config from default branch · PR files · check run (in progress)
+    W->>LLM: redacted, chunked diff → JSON comments
+    W->>W: validate lines · sanitize · dedupe (fingerprints)
+    W->>GH: ONE review with inline comments · complete check run
+    W->>DB: run, LLM calls, comments, cost, latency
+```
+
+## How it works
+- **Webhook ingestion.** Verify the HMAC on the raw body, dedupe by delivery id, record, enqueue, return `202`. Nothing slow happens in the request ([ADR 0002](docs/adr/0002-queue-vs-inline-processing.md)).
+- **Orchestrator.** One Celery task per run holds a per-PR lock, checks the head didn't move, and owns every side effect: GitHub calls, DB writes, the check run ([ADR 0010](docs/adr/0010-review-run-lifecycle.md)).
+- **Pure engine.** Filter → redact secrets → prioritise → chunk to a token budget → LLM → validate → rank. No HTTP or DB inside, so the CLI and the eval harness run the exact same code ([ADR 0007](docs/adr/0007-pure-review-engine.md)).
+- **Validation.** A comment survives only if its lines are real added lines in this diff. Output is sanitised (no @mentions, images, HTML or foreign links), and only ever posted as `COMMENT`, never approve or block ([ADR 0006](docs/adr/0006-comment-only-reviews.md)).
+- **Dedupe and incremental reviews.** Fingerprints of path, category and code (not line numbers) stop repeats across pushes. A new push reviews only what changed since the last review, falling back to a full review after a force-push ([ADR 0008](docs/adr/0008-comment-fingerprints.md), [ADR 0011](docs/adr/0011-incremental-reviews.md)).
+
+## Production metrics
+
+From the private test repository `Ommadure/reviewpilot-playground`, via the dashboard. So far these come from the local deployment; this table will be refreshed from production.
+
+| Reviews run | Avg cost per review | p95 latency | Helpful rate |
+| --- | --- | --- | --- |
+| 3 | ₹0 (Gemini free tier) | 58.7 s | 100% (2 of 2 posted comments: 👍 or fixed) |
+
+## Security
+
+The full checklist, with code and test evidence for every item, is in [docs/security.md](docs/security.md). The short version:
+- **Webhooks:** verified with a constant-time HMAC.
+- **Least-privilege App:** it only ever comments.
+- **Secrets:** env-only, never logged. Users' GitHub tokens are Fernet-encrypted.
+- **Dashboard sessions:** `HttpOnly; Secure; SameSite=Lax` cookies. Tenancy is enforced in the data layer and tested on every endpoint.
+- **Before and after the LLM:** secrets are redacted before any LLM call, and prompt-injection defences run on both sides of it.
+- **Caps:** per-run token and cost caps, plus rate-limited, permission-checked slash commands.
+- **Dependencies:** audited in CI every week.
+
+## Deploying
+
+Render (API free + worker about $7 a month), Neon, Upstash and Vercel. The step-by-step guide is in [docs/deploy.md](docs/deploy.md), and the reasoning, including the measured Redis command budget, is in [ADR 0014](docs/adr/0014-deployment-topology.md). `render.yaml` and `frontend/vercel.json` hold the whole configuration.
 
 ## Local setup
 
@@ -114,6 +196,8 @@ uv run python ../evals/compare.py ../evals/results/A.json ../evals/results/B.jso
 
 ## Docs
 - [GitHub App setup](docs/github-app-setup.md)
+- [Deploying](docs/deploy.md)
+- [Security review](docs/security.md)
 - [Architecture](docs/architecture.md)
 - ADRs:
   - [0001 Record decisions](docs/adr/0001-record-architecture-decisions.md)
@@ -129,3 +213,4 @@ uv run python ../evals/compare.py ../evals/results/A.json ../evals/results/B.jso
   - [0011 Incremental reviews](docs/adr/0011-incremental-reviews.md)
   - [0012 Dashboard login, sessions and tenancy](docs/adr/0012-dashboard-auth-and-tenancy.md)
   - [0013 Eval matching rule](docs/adr/0013-eval-matching-rule.md)
+  - [0014 Deployment topology](docs/adr/0014-deployment-topology.md)

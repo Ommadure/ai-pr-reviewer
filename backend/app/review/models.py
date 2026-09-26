@@ -214,6 +214,8 @@ class ReviewBudget:
     max_input_tokens: int = 60_000  # per review run
     max_chunk_tokens: int = 12_000  # per LLM call
     max_concurrent_llm_calls: int = 2
+    max_output_tokens: int = 8_192  # per LLM call: a ceiling on what one answer can bill
+    max_cost_usd: float | None = None  # per review run; None = no cap
 
 
 @dataclass

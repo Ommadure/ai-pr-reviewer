@@ -24,6 +24,7 @@ import structlog
 from sqlalchemy import func, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.logging import bind_context
 from app.github.app_auth import GitHubAppAuth
 from app.github.client import (
     CheckRunOutput,
@@ -160,7 +161,9 @@ async def _execute_locked(deps: ReviewDeps, run_id: int, *, final_attempt: bool)
 
     owner, name = repository.owner_and_name
     github = deps.github_auth.installation_client(installation_id)
-    logger = log.bind(run_id=run_id, repo=repository.full_name, pr=pr_number, head_sha=head_sha)
+    # Everything below, however deep (GitHub retries, LLM backoff), logs with this context.
+    bind_context(run_id=run_id, repo=repository.full_name, pr=pr_number, head_sha=head_sha)
+    logger = log
     started = time.monotonic()
     check_run_id = existing_check_run
     result: ReviewResult | None = None
