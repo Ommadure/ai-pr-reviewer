@@ -27,7 +27,10 @@ Sign in to each service with GitHub. Pick **Singapore / `ap-southeast-1`** where
 ## 3. Vercel (dashboard)
 1. [vercel.com/new](https://vercel.com/new): **Import** the `ai-pr-reviewer` repository.
 2. Set **Root Directory** to `frontend`. Vercel reads `frontend/vercel.json`, so framework, build command and output are already set.
-3. Deploy, then note the URL, for example `https://reviewpilot-om.vercel.app`. It's the dashboard's public address, so it goes into `APP_BASE_URL` and `FRONTEND_URL` below.
+3. Deploy, then open **Settings → Domains** and note the **production domain**, for example `https://reviewpilot-xxxx.vercel.app`. It's the dashboard's public address, so it goes into `APP_BASE_URL` and `FRONTEND_URL` below, and into the GitHub App in step 6.
+   - **Don't use a deployment link** (`reviewpilot-<hash>-<team>.vercel.app`, the one GitHub's "View deployment" and Vercel's emails give you). Those sit behind Vercel's login. If you're signed in as another account, they say "This doesn't exist, or it belongs to an account you can't access".
+   - If `<project>.vercel.app` is already taken by someone else, Vercel adds a suffix. Copy the domain from the dashboard; don't guess it.
+4. **Settings → Deployment Protection:** set **Vercel Authentication** to *Only Preview Deployments* (or off). The dashboard must be public, because visitors and GitHub's sign-in redirect can't log in to your Vercel account.
 
    The dashboard can't sign anyone in until the API exists; that's expected at this step.
 
