@@ -1,13 +1,42 @@
 # ReviewPilot
 
-A GitHub App that reviews pull requests with an LLM. When a PR is opened or updated, ReviewPilot reads the diff and posts **one** review with inline comments on the exact changed lines. Each comment is validated against the diff, stripped of anything unsafe, and deduplicated across pushes. A dashboard shows every review's cost, latency and whether people found it useful. An offline eval harness measures precision and recall on 30 labelled PRs, so prompt changes are judged on evidence.
+A GitHub App that reviews pull requests with an LLM. When a PR is opened or updated, ReviewPilot reads the diff and posts **one** review with inline comments on the exact changed lines. Each comment is validated against the diff, stripped of anything unsafe, and deduplicated across pushes. A dashboard shows every review's cost, latency and whether people found it useful. An offline eval harness measures precision, recall and fix quality on 31 labelled PRs plus a held-out set, so prompt changes are judged on evidence.
 
 **Stack:** FastAPI · Celery + Redis · PostgreSQL · Gemini (provider-agnostic) · React + TanStack Query · deployed for $0 on an Oracle Cloud VM (Docker + Caddy), Neon, Upstash and Vercel.
 
 ## Demo
 
-<!-- Record with the GitHub App on your test repo: open a PR, wait for the check, then the dashboard. -->
-*A demo GIF and a screenshot of a real inline review will go here once production is live (see [docs/deploy.md](docs/deploy.md)).*
+<!-- GIF: record opening a PR on the playground repo, the "ReviewPilot" check running, the
+review appearing, then the dashboard (Linux: Kooha or Peek; shrink with gifski). Save it as
+docs/demo.gif and add ![ReviewPilot reviewing a pull request](docs/demo.gif) here. -->
+
+### A real review
+This is ReviewPilot's first production review, on a test PR that adds a user lookup. The code has three bugs, planted on purpose:
+
+```python
+def find_user(db_path, name):
+    conn = sqlite3.connect(db_path)
+    rows = conn.execute(f"SELECT * FROM users WHERE name = '{name}'").fetchall()
+    return rows[0]
+```
+
+The check run finished in **10 seconds** as `neutral`: it flags problems but never blocks a merge. It posted one review with these inline comments (excerpts, quoted as posted):
+
+| Line | Comment | One-click fix |
+| --- | --- | --- |
+| 6 | 🚨 **Critical · Security: SQL injection vulnerability in user lookup.** "User input `name` is directly interpolated into the SQL query string using f-strings… Use parameterized queries instead." | `rows = conn.execute("SELECT * FROM users WHERE name = ?", (name,)).fetchall()` |
+| 7 | 🔴 **High · Bug: IndexError on empty user lookup.** "Accessing `rows[0]` directly will raise an `IndexError` if no user matches the given name." | none |
+| 5 | 🟠 **Medium · Bug: SQLite database connection is leaked.** "The SQLite connection created via `sqlite3.connect` is never closed…" | a rewrite of the function starting `with sqlite3.connect(db_path) as conn:` **(wrong: see below)** |
+
+The summary rated the PR **high** risk, and each comment ends with its confidence and a 👍/👎 prompt. The reactions feed the dashboard's helpfulness numbers.
+
+**What it got wrong, and what changed because of it.** The third fix doesn't work: `sqlite3`'s `with` block commits or rolls back, but never closes the connection. That one mistake led to four changes:
+1. **Eval cases** that reproduce it every time;
+2. **A harness that scores fixes as well as findings**;
+3. **Prompt v4**, which fixes it, including on a held-out `psycopg2` case the prompt never mentions;
+4. **An engine check**, added after replaying every stored suggestion showed that about 1 in 4 wouldn't apply cleanly, for example by deleting a `raise` or duplicating a loop body.
+
+The whole story, with numbers, is in [evals/RESULTS.md](evals/RESULTS.md).
 
 ## Architecture
 
