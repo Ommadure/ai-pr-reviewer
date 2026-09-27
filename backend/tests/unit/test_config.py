@@ -133,3 +133,14 @@ def test_server_needs_llm_model_and_key() -> None:
 )
 def test_hosted_database_urls_are_normalized_for_asyncpg(given: str, expected: str) -> None:
     assert Settings(app_env="test", database_url=given).database_url == expected
+
+
+@pytest.mark.parametrize(
+    "given", ["https://x.vercel.app", "https://x.vercel.app/", " https://x.vercel.app// "]
+)
+def test_public_urls_lose_trailing_slashes(given: str) -> None:
+    settings = Settings(app_env="test", app_base_url=given, frontend_url=given)
+    assert settings.app_base_url == settings.frontend_url == "https://x.vercel.app"
+    assert settings.oauth_redirect_uri == "https://x.vercel.app/api/v1/auth/github/callback"
+    explicit = Settings(app_env="test", oauth_callback_url="https://x.vercel.app/cb/")
+    assert explicit.oauth_redirect_uri == "https://x.vercel.app/cb"

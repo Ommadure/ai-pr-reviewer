@@ -112,6 +112,14 @@ class Settings(ReviewSettings):
     def _asyncpg_url(cls, value: str) -> str:
         return normalize_database_url(value)
 
+    @field_validator("app_base_url", "frontend_url", "oauth_callback_url")
+    @classmethod
+    def _no_trailing_slash(cls, value: str) -> str:
+        # Paths are appended with a leading "/". A pasted "https://x.vercel.app/"
+        # sent GitHub ".app//api/v1/auth/github/callback", which matches no
+        # registered callback, so sign-in failed with "redirect_uri is not associated".
+        return value.strip().rstrip("/")
+
     @model_validator(mode="after")
     def _fail_fast_on_missing_values(self) -> Self:
         if self.app_env == "test":

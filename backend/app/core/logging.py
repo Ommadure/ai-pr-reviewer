@@ -43,6 +43,22 @@ def request_id_from(header: str | None) -> str:
     return header if header and _SAFE_REQUEST_ID.match(header) else uuid.uuid4().hex[:16]
 
 
+class DropQueryStrings(logging.Filter):
+    """Log uvicorn's access lines without query strings.
+
+    The OAuth callback arrives as `/api/v1/auth/github/callback?code=…&state=…`, and
+    a login code (single-use, 10 minutes) doesn't belong in logs. No route takes
+    anything else sensitive in a query, but no route needs its query logged either.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        # uvicorn.access records: (client_addr, method, full_path, http_version, status)
+        args = record.args
+        if isinstance(args, tuple) and len(args) == 5 and isinstance(args[2], str):
+            record.args = (*args[:2], args[2].split("?", 1)[0], *args[3:])
+        return True
+
+
 def configure_logging(app_env: AppEnv) -> None:
     renderer: structlog.types.Processor = (
         structlog.dev.ConsoleRenderer()
@@ -63,6 +79,9 @@ def configure_logging(app_env: AppEnv) -> None:
         logger_factory=structlog.PrintLoggerFactory(file=sys.stdout),
         cache_logger_on_first_use=True,
     )
+    access_log = logging.getLogger("uvicorn.access")
+    if not any(isinstance(f, DropQueryStrings) for f in access_log.filters):
+        access_log.addFilter(DropQueryStrings())
 
 
 def report_logged_errors(_: WrappedLogger, method: str, event_dict: EventDict) -> EventDict:
