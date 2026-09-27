@@ -6,6 +6,8 @@ dropped is kept with a reason: that's how we measure hallucination rates and
 debug prompts.
 """
 
+import difflib
+import re
 from collections.abc import Iterable, Sequence
 
 from app.config.repo_config import RepoConfig
@@ -73,8 +75,12 @@ def _validate_one(
         covers_added_only = len(target) == comment.line - first + 1 and all(
             line.type == "added" for line in target
         )
-        if not covers_added_only:
-            suggestion, suggestion_dropped = None, True
+        suggestion = clean_suggestion(suggestion) if covers_added_only else None
+        if suggestion is not None and misfit_reason(
+            {n: line.content for n, line in lines.items()}, first, comment.line, suggestion
+        ):
+            suggestion = None
+        suggestion_dropped = suggestion is None
 
     return ReviewComment(
         path=comment.path,
@@ -91,6 +97,90 @@ def _validate_one(
         code_snapshot=code_snapshot,
         suggestion_dropped=suggestion_dropped,
     )
+
+
+# How prompt_builder shows diff lines to the model: "+ 42 | code", "  42 | code",
+# "-    | code". Models sometimes copy that view into a suggestion, which GitHub would
+# then apply literally: a syntax error in the author's file.
+# Added and context lines always carry a line number; removed lines never do. Requiring
+# the number keeps real code such as a TypeScript union (`  | "admin"`) from matching.
+_DIFF_VIEW_LINE = re.compile(r"^(?:([+ ]) *\d+ |(-) +)\| ?(.*)$")
+
+
+def clean_suggestion(text: str) -> str | None:
+    """The suggested code without copied diff-view markers, or None if it can't be trusted.
+
+    - Every line in the `+ NN | ` view: strip it (the code after `| ` keeps its indentation).
+    - Every line starting with `+ ` (the view without its number) or a raw-diff `+`: strip it.
+    - A removed (`-`) line, or marked and plain lines mixed: drop it rather than guess.
+    """
+    lines = [line for line in text.splitlines() if line.strip()]
+    if not lines:
+        return text
+    views = [_DIFF_VIEW_LINE.match(line) for line in lines]
+    if all(views):
+        if any(m[2] for m in views if m):  # a removed line: old code, can't be applied
+            return None
+        return "\n".join(
+            m[3] if (m := _DIFF_VIEW_LINE.match(line)) else "" for line in text.splitlines()
+        )
+    if any(views):
+        return None
+    # The view's "+ " without the number ("+ def f():"), or a raw diff's "+".
+    for marker in ("+ ", "+"):
+        if all(line.startswith(marker) for line in lines):
+            return "\n".join(line.removeprefix(marker) for line in text.splitlines())
+    return text
+
+
+# Lines too generic to tell whether a suggestion copied them (braces, bare keywords).
+_TRIVIAL_LINES = {"", "{", "}", "(", ")", "[", "]", "});", "})", ");", "pass", "return", "else:"}
+_SIMILAR = 0.6  # difflib ratio at which a range line counts as edited rather than removed
+
+
+def misfit_reason(lines: dict[int, str], first: int, last: int, suggestion: str) -> str | None:
+    """Why the suggestion wouldn't apply cleanly over lines first..last, or None if it fits.
+
+    GitHub replaces exactly first..last with the suggestion. Models often write a
+    replacement for a different span than the one they report: the whole function over
+    its `def` line, or one fixed `if` over the `if` and the `raise` under it. Applied,
+    that duplicates or silently deletes code (a deleted `raise` can open a security hole).
+    """
+    new = [line.strip() for line in suggestion.splitlines()]
+    old = [lines[n].strip() for n in range(first, last + 1) if n in lines]
+    window = len(new) + 1
+    nearby = {
+        lines[n].strip()
+        for n in [*range(first - window, first), *range(last + 1, last + 1 + window)]
+        if n in lines
+    }
+    for line in set(new):
+        extra_copies = new.count(line) - old.count(line)
+        if _meaningful(line) and extra_copies > 0 and line in nearby:
+            return "repeats code outside its range"
+    if len(new) < len(old):
+        for line in old:
+            if _meaningful(line) and not any(_similar(line, n) for n in new):
+                return "drops a line from its range"
+    # A drop-in fix keeps the block structure: wrapping code in `if (x) { … }` adds a
+    # `{` and a `}`, but a replacement that swallows the enclosing function's `}` or
+    # `)` changes how many brackets the range leaves open.
+    if _bracket_balance(new) != _bracket_balance(old):
+        return "changes the bracket structure of its range"
+    return None
+
+
+def _bracket_balance(lines: list[str]) -> int:
+    text = "".join(lines)
+    return sum(text.count(c) for c in "([{") - sum(text.count(c) for c in ")]}")
+
+
+def _meaningful(line: str) -> bool:
+    return len(line) >= 6 and line not in _TRIVIAL_LINES
+
+
+def _similar(a: str, b: str) -> bool:
+    return difflib.SequenceMatcher(None, a, b).ratio() >= _SIMILAR
 
 
 def finalize_comments(
