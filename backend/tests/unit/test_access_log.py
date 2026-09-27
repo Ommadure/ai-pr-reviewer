@@ -19,10 +19,15 @@ class _Collect(logging.Handler):
 def access_log() -> Iterator[logging.Logger]:
     logger = logging.getLogger("uvicorn.access")
     saved = (list(logger.filters), list(logger.handlers), logger.level, logger.propagate)
+    disabled = logger.disabled
+    # Alembic's fileConfig (integration tests) disables loggers that already exist.
+    # uvicorn sets this logger up itself in production; here the test owns it.
+    logger.disabled = False
     yield logger
     logger.filters, logger.handlers = saved[0], saved[1]
     logger.setLevel(saved[2])
     logger.propagate = saved[3]
+    logger.disabled = disabled
 
 
 def test_oauth_codes_never_reach_the_access_log(access_log: logging.Logger) -> None:
