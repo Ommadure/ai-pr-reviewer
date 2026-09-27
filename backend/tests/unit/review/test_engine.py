@@ -201,3 +201,23 @@ async def test_clean_change_produces_no_comments() -> None:
     result = await run_review(files, RepoConfig(), PR, llm, model="m")
     assert result.comments == [] and result.dropped == []
     assert result.files_reviewed == 1
+
+
+async def test_a_suggestion_that_would_duplicate_code_is_dropped_not_the_comment(
+    files: list[FileDiff],
+) -> None:
+    # A fixed line 12 plus a copy of line 13: applied over line 12 alone, 13 doubles.
+    misfit = (
+        '    query = "SELECT * FROM users WHERE id = ?"\n    row = db.execute(query).fetchone()'
+    )
+    llm = FakeLLMProvider(
+        responder=lambda m: (
+            SUMMARY
+            if _is_summary_call(m)
+            else _review([_comment("app/users.py", 12, suggestion=misfit)])
+        )
+    )
+    result = await run_review(files, RepoConfig(), PR, llm, model="m")
+    [comment] = result.comments
+    assert (comment.suggestion, comment.suggestion_dropped) == (None, True)
+    assert comment.line == 12  # the finding itself still posts
