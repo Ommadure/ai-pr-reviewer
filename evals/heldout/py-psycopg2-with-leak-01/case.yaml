@@ -1,0 +1,16 @@
+id: py-psycopg2-with-leak-01
+language: python
+# Held out from prompt v4: the prompt names sqlite3 only, never psycopg2, whose
+# connection context manager also commits without closing. It measures whether v4
+# learned the rule rather than the example.
+description: '`with psycopg2.connect()` commits but never closes'
+title: Mark orders shipped
+planted_bugs:
+- path: app/orders/shipping.py
+  lines: [7, 7]
+  category: bug
+  severity: medium
+  description: 'psycopg2 connection context manager ends the transaction but never closes: one leaked server connection per call'
+  accept_categories: [performance]
+  bad_suggestions:
+  - '(?s)\A(?!.*(?:\.close\(|closing\())(?=.*\bwith\s+psycopg2\.connect\()'

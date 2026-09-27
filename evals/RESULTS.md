@@ -1,6 +1,6 @@
 # Evaluation results
 
-All runs used the dataset in `cases/` (25 bug cases and 5 clean), the matching rule in [ADR 0013](../docs/adr/0013-eval-matching-rule.md), temperature 0.1, and the Gemini free tier, run on 2026-09-25. The time in each row links to that run's full report, which lists every miss and false positive.
+The rows below used the Phase 6 dataset in `cases/` (25 bug cases and 5 clean; v4's section uses the current 26 + 5), the matching rule in [ADR 0013](../docs/adr/0013-eval-matching-rule.md), temperature 0.1, and the Gemini free tier, run on 2026-09-25. The time in each row links to that run's full report, which lists every miss and false positive.
 
 | Run | Prompt | Model | Precision | Recall | F1 | Found | FP (on clean) | Severity exact | Tokens in / out | p50 | p95 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -37,17 +37,6 @@ uv run python ../evals/run_eval.py --prompt v3 --model gemini-3.5-flash --pause 
   - **Explicit N+1 wording:** a query inside a loop is `performance` even when the fix is a code change.
   - **Result:** severity agreement 75%, the cleanest run, and no hallucinated-import comment.
 
-## What we shipped, and why
-**Prompt v3 is now the default** (`DEFAULT_PROMPT_VERSION = "v3"`).
-- **Why it wins:** it matched v1 and v2 on detection (24/25, no false positives on clean code), had the best severity agreement, and guards against a known hallucination class.
-- **What it costs:** about 24% more input tokens, because the system prompt is longer. That's free on this tier and small on a paid one.
-
-**On the model**, the evidence points at **gemini-3.5-flash-lite** for this workload:
-- **Against gemini-3.1-flash-lite:** the same detection except the N+1 category, no false positives on clean code (against 0.4 per clean case), and about 3× faster.
-- **Against gemini-3.5-flash:** it could not be measured, so that comparison is still open.
-
-If you want to switch, change `LLM_MODEL` in `backend/.env`. I didn't edit it, because that file holds your secrets.
-
 ## Known failure: `sqlite3`'s context manager (2026-09-27)
 Found in production, on the first real review (reviewpilot-playground PR #4). The reviewer flagged a leaked SQLite connection, and suggested `with sqlite3.connect(...) as conn:` as the fix. That block commits or rolls back but **never closes** the connection. It's now two cases (ADR 0013, amendment):
 - **`py-resource-leak-01`** gained `bad_suggestions`, so the wrong fix is scored;
@@ -60,11 +49,65 @@ Prompt v3 on gemini-3.5-flash-lite, 3 runs of just these two cases:
 | `py-resource-leak-01` | found, **wrong fix** | found, **wrong fix** | found, **wrong fix** |
 | `py-sqlite-with-leak-01` | **missed** | **missed** | **missed** |
 
-It happens every time, so it's a real blind spot, not noise. It's the first case v3 reliably fails, which gives a future prompt version something concrete to beat. The full-dataset rows above predate both changes. To reproduce:
+It happens every time, so it's a real blind spot, not noise. **Prompt v4 fixes it** (above). The full-dataset rows above predate both changes. To reproduce:
 
 ```bash
 uv run python ../evals/run_eval.py --prompt v3 --model gemini-3.5-flash-lite --cases 'py-*leak*'
 ```
+
+## Prompt v4 (2026-09-27): context-manager leaks and fix correctness
+v4 is v3 plus two rules in `system.md`. Nothing else changed.
+- **Resource leaks:** check what a `with` block does on exit instead of assuming it cleans up. The example: `with sqlite3.connect(...)` commits or rolls back but never closes.
+- **Suggestions:** a suggestion must remove the cause described in the comment, not just its appearance:
+  - a leak fix must release the resource on every path, using `contextlib.closing`, `try`/`finally` or a documented closing context manager, and never `with sqlite3.connect(...)`;
+  - an injection fix must bind or escape the value;
+  - if unsure, leave `suggestion` null and describe the fix in the body.
+
+**Full dataset** (31 cases: 26 with bugs, 5 clean), gemini-3.5-flash-lite, two runs of each prompt:
+
+| Run | Prompt | Precision | Recall | Found | FP | Severity exact | Known-wrong fixes | Suggestions on found bugs | Tokens in |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| [03:28](results/20260927T032817Z_v3_gemini-3.5-flash-lite.md) | v3 | 96% | 92% | 24/26 | 1 | 71% | 1 | 13/24 | 49,385 |
+| [03:39](results/20260927T033928Z_v3_gemini-3.5-flash-lite.md) | v3 | 96% | 92% | 24/26 | 1 | 79% | 1 | 12/24 | 49,385 |
+| [03:36](results/20260927T033630Z_v4_gemini-3.5-flash-lite.md) | **v4** | 100% | 96% | 25/26 | 0 | 84% | 0 | 10/25 | 58,884 |
+| [03:42](results/20260927T034228Z_v4_gemini-3.5-flash-lite.md) | **v4** | 100% | 100% | 26/26 | 0 | 81% | 0 | 9/26 | 56,825 |
+
+p50 latency was 1.9 s for both, and cost was $0 (free tier).
+
+**The target cases and the held-out set** ([`heldout/`](heldout/), run with `--cases-dir ../evals/heldout`):
+
+| Case | v3 | v4 |
+| --- | --- | --- |
+| `py-resource-leak-01` | found, **wrong fix** 3/3 | found, no wrong fix 5/5 |
+| `py-sqlite-with-leak-01` | **missed** 3/3 | found 5/5 |
+| `py-psycopg2-with-leak-01` (held out) | "found" 3/3, but as a *missing commit*, which is false; the fix was wrong every time | the real bug ("not closed") 3/3, no wrong fixes |
+| `clean-psycopg3-with-01` (control) | 1 FP per run ("missing commit", false) | 1 FP per run ("not closed", false) |
+
+**How I got to the final text** (four drafts, each measured):
+1. **"If a context manager's exit isn't a documented close, treat the resource as still open."** Found both sqlite cases, but it's why v4 calls psycopg 3 "not closed".
+2. **A hedge instead: "if you don't know the library, say nothing".** Worse: it missed `py-sqlite-with-leak-01` again, even though the prompt states the sqlite fact. Hedging suppressed the knowledge the prompt was teaching.
+3. **Neutral wording, neither assume nor hedge.** Both found, and the correct bug on psycopg2. But 1 wrong fix in 7 chances: without being told otherwise, the model still reaches for a `with` block as "the fix".
+4. **Plus one named counter-example** in the suggestion rules (shipped). 0 wrong fixes in every run since.
+
+**What v4 costs, honestly:**
+- **Fewer suggestions:** about 37% of found bugs get one, against about 52% on v3. The rule says "if unsure, no suggestion", and the model applies it beyond leaks. A missing one-click fix is a smaller harm than a wrong one, but it's a real loss of convenience. The next thing to measure is suggestion *correctness* across all categories, not only the known-wrong ones.
+- **About 17% more input tokens** per review.
+- **One unexplained miss:** `ts-unhandled-promise-01` got no comment in one of the two v4 runs. It was found in the other run, and in every earlier run of every prompt, so it's probably noise, but it's worth watching.
+- **psycopg 3 is a model knowledge gap:** both prompts post one false claim on it. The v4 draft that tried to fix it with wording made everything else worse (step 2).
+- **The target cases were written from this very failure,** and the held-out control was seen by one draft. The psycopg2 bug case was never in the prompt, and that is the real evidence v4 learned the rule and not just the example.
+
+## What we shipped, and why
+**Prompt v4 is now the default** (`DEFAULT_PROMPT_VERSION = "v4"`, 2026-09-27). Across both runs it matched or beat v3 on every detection metric: 25–26/26 found against 24/26, no false positives on the dataset against 1, and severity-exact 81–84% against 71–79%. It also posted **no known-wrong fixes**. The costs are listed above. v3 shipped after the Phase 6 eval, for the reasons below.
+
+**Prompt v3** (2026-09-25):
+- **Why it won then:** it matched v1 and v2 on detection (24/25, no false positives on clean code), had the best severity agreement, and guards against a known hallucination class.
+- **What it costs:** about 24% more input tokens, because the system prompt is longer. That's free on this tier and small on a paid one.
+
+**On the model**, the evidence points at **gemini-3.5-flash-lite** for this workload:
+- **Against gemini-3.1-flash-lite:** the same detection except the N+1 category, no false positives on clean code (against 0.4 per clean case), and about 3× faster.
+- **Against gemini-3.5-flash:** it could not be measured, so that comparison is still open.
+
+If you want to switch, change `LLM_MODEL` in `backend/.env`. I didn't edit it, because that file holds your secrets.
 
 ## How to read these numbers (honestly)
 - **The dataset is at its ceiling for detection.** Every configuration found at least 24 of 25 bugs, so precision and recall barely separate prompts here. The differences show up in severity, category and false-positive quality. The next step is a harder tier: longer diffs with distracting but correct code, and several bugs per case.

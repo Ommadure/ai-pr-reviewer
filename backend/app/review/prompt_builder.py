@@ -24,8 +24,8 @@ from app.review.llm.base import Message
 from app.review.models import FileDiff, FileSummary, PRContext
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
-# v3 shipped after the Phase 6 eval: see evals/RESULTS.md for why.
-DEFAULT_PROMPT_VERSION = "v3"
+# v4 shipped 2026-09-27 (context-manager leaks, fix correctness): see evals/RESULTS.md.
+DEFAULT_PROMPT_VERSION = "v4"
 PROMPT_VERSION_FORMAT = re.compile(r"^v\d+$")
 MAX_DESCRIPTION_CHARS = 2_000
 # Our structural tags. PR content that contains them could otherwise "close"

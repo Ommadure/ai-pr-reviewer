@@ -1,0 +1,9 @@
+id: clean-psycopg3-with-01
+language: python
+# Held-out control for prompt v4: psycopg 3's connection context manager commits AND
+# closes, so a v4 that over-applies "a `with` block may not close" flags this falsely.
+# Caveat: it was seen during one v4 iteration (a hedge sentence that made things worse
+# and was removed), so it's not perfectly held out. Every prompt so far posts 1 false
+# positive here: v3 claims a missing commit, v4 a missing close (a model knowledge gap).
+description: 'psycopg 3: the connection context manager commits and closes'
+title: Mark orders shipped

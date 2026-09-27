@@ -1,0 +1,1399 @@
+{
+  "created_at": "2026-09-27T03:28:17.270346Z",
+  "prompt_version": "v3",
+  "prompt_sha": "5ca6fefe627b",
+  "provider": "gemini",
+  "model": "gemini-3.5-flash-lite",
+  "temperature": 0.1,
+  "cases_pattern": "*",
+  "line_tolerance": 2,
+  "category_equivalences": [
+    [
+      "bug",
+      "error_handling"
+    ]
+  ],
+  "cases": [
+    {
+      "id": "clean-py-async-01",
+      "kind": "clean",
+      "language": "python",
+      "planted": [],
+      "predictions": [],
+      "matched": [],
+      "false_positives": [],
+      "missed": [],
+      "dropped_by_validator": 0,
+      "input_tokens": 1752,
+      "output_tokens": 66,
+      "cost_usd": 0.0,
+      "latency_ms": 1540,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "clean-py-refactor-01",
+      "kind": "clean",
+      "language": "python",
+      "planted": [],
+      "predictions": [],
+      "matched": [],
+      "false_positives": [],
+      "missed": [],
+      "dropped_by_validator": 0,
+      "input_tokens": 2003,
+      "output_tokens": 117,
+      "cost_usd": 0.0,
+      "latency_ms": 1634,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "clean-sql-migration-01",
+      "kind": "clean",
+      "language": "sql",
+      "planted": [],
+      "predictions": [],
+      "matched": [],
+      "false_positives": [],
+      "missed": [],
+      "dropped_by_validator": 0,
+      "input_tokens": 1544,
+      "output_tokens": 72,
+      "cost_usd": 0.0,
+      "latency_ms": 1531,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "clean-ts-validation-01",
+      "kind": "clean",
+      "language": "typescript",
+      "planted": [],
+      "predictions": [],
+      "matched": [],
+      "false_positives": [],
+      "missed": [],
+      "dropped_by_validator": 0,
+      "input_tokens": 1792,
+      "output_tokens": 65,
+      "cost_usd": 0.0,
+      "latency_ms": 1734,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "clean-tsx-component-01",
+      "kind": "clean",
+      "language": "typescript",
+      "planted": [],
+      "predictions": [],
+      "matched": [],
+      "false_positives": [],
+      "missed": [],
+      "dropped_by_validator": 0,
+      "input_tokens": 1855,
+      "output_tokens": 69,
+      "cost_usd": 0.0,
+      "latency_ms": 1342,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "js-async-foreach-01",
+      "kind": "bug",
+      "language": "javascript",
+      "planted": [
+        {
+          "path": "src/services/import.js",
+          "lines": [
+            4,
+            6
+          ],
+          "category": "bug",
+          "severity": "high",
+          "description": "forEach doesn't await async callbacks: returns before inserts finish, and failures are unhandled",
+          "accept_categories": [],
+          "bad_suggestions": []
+        }
+      ],
+      "predictions": [
+        {
+          "path": "src/services/import.js",
+          "line": 6,
+          "start_line": 4,
+          "category": "bug",
+          "severity": "medium",
+          "title": "Async/await inside forEach does not await promises",
+          "source": "llm",
+          "suggestion": "  for (const contact of contacts) {\n    await db.contacts.insert(contact);\n  }"
+        }
+      ],
+      "matched": [
+        [
+          0,
+          0
+        ]
+      ],
+      "false_positives": [],
+      "missed": [],
+      "dropped_by_validator": 0,
+      "input_tokens": 1511,
+      "output_tokens": 241,
+      "cost_usd": 0.0,
+      "latency_ms": 2271,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "js-off-by-one-01",
+      "kind": "bug",
+      "language": "javascript",
+      "planted": [
+        {
+          "path": "src/utils/tags.js",
+          "lines": [
+            7,
+            7
+          ],
+          "category": "bug",
+          "severity": "high",
+          "description": "i <= length reads tags[length] (undefined) and slugify throws",
+          "accept_categories": [],
+          "bad_suggestions": []
+        }
+      ],
+      "predictions": [
+        {
+          "path": "src/utils/tags.js",
+          "line": 7,
+          "start_line": null,
+          "category": "bug",
+          "severity": "high",
+          "title": "Off-by-one error causing TypeError on array iteration",
+          "source": "llm",
+          "suggestion": "  7 |   for (let i = 0; i < tags.length; i++) {"
+        }
+      ],
+      "matched": [
+        [
+          0,
+          0
+        ]
+      ],
+      "false_positives": [],
+      "missed": [],
+      "dropped_by_validator": 0,
+      "input_tokens": 1586,
+      "output_tokens": 241,
+      "cost_usd": 0.0,
+      "latency_ms": 2123,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "py-float-money-01",
+      "kind": "bug",
+      "language": "python",
+      "planted": [
+        {
+          "path": "app/payments/split.py",
+          "lines": [
+            8,
+            9
+          ],
+          "category": "bug",
+          "severity": "medium",
+          "description": "Rounded equal shares don't sum to the total (e.g. 100 / 3)",
+          "accept_categories": [],
+          "bad_suggestions": []
+        }
+      ],
+      "predictions": [
+        {
+          "path": "app/payments/split.py",
+          "line": 9,
+          "start_line": 8,
+          "category": "bug",
+          "severity": "medium",
+          "title": "Divided shares may not sum up to the total due to rounding",
+          "source": "llm",
+          "suggestion": null
+        }
+      ],
+      "matched": [
+        [
+          0,
+          0
+        ]
+      ],
+      "false_positives": [],
+      "missed": [],
+      "dropped_by_validator": 0,
+      "input_tokens": 1542,
+      "output_tokens": 256,
+      "cost_usd": 0.0,
+      "latency_ms": 1878,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "py-hardcoded-secret-01",
+      "kind": "bug",
+      "language": "python",
+      "planted": [
+        {
+          "path": "app/billing/settings.py",
+          "lines": [
+            7,
+            7
+          ],
+          "category": "security",
+          "severity": "critical",
+          "description": "Production database credentials hardcoded in source",
+          "accept_categories": [],
+          "bad_suggestions": []
+        }
+      ],
+      "predictions": [
+        {
+          "path": "app/billing/settings.py",
+          "line": 7,
+          "start_line": null,
+          "category": "security",
+          "severity": "critical",
+          "title": "Hardcoded database password in source code",
+          "source": "llm",
+          "suggestion": null
+        }
+      ],
+      "matched": [
+        [
+          0,
+          0
+        ]
+      ],
+      "false_positives": [],
+      "missed": [],
+      "dropped_by_validator": 0,
+      "input_tokens": 1555,
+      "output_tokens": 207,
+      "cost_usd": 0.0,
+      "latency_ms": 1931,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "py-integer-division-01",
+      "kind": "bug",
+      "language": "python",
+      "planted": [
+        {
+          "path": "app/reviews/stats.py",
+          "lines": [
+            8,
+            8
+          ],
+          "category": "bug",
+          "severity": "medium",
+          "description": "// floors the average: 4.6 stars becomes 4",
+          "accept_categories": [],
+          "bad_suggestions": []
+        }
+      ],
+      "predictions": [
+        {
+          "path": "app/reviews/stats.py",
+          "line": 8,
+          "start_line": null,
+          "category": "bug",
+          "severity": "medium",
+          "title": "Integer division used for calculating average rating",
+          "source": "llm",
+          "suggestion": "    return sum(ratings) / len(ratings)"
+        }
+      ],
+      "matched": [
+        [
+          0,
+          0
+        ]
+      ],
+      "false_positives": [],
+      "missed": [],
+      "dropped_by_validator": 0,
+      "input_tokens": 1516,
+      "output_tokens": 259,
+      "cost_usd": 0.0,
+      "latency_ms": 1696,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "py-inverted-condition-01",
+      "kind": "bug",
+      "language": "python",
+      "planted": [
+        {
+          "path": "app/auth/tokens.py",
+          "lines": [
+            12,
+            12
+          ],
+          "category": "bug",
+          "severity": "critical",
+          "description": "Inverted check: valid tokens are rejected and expired ones accepted",
+          "accept_categories": [
+            "security"
+          ],
+          "bad_suggestions": []
+        }
+      ],
+      "predictions": [
+        {
+          "path": "app/auth/tokens.py",
+          "line": 13,
+          "start_line": 12,
+          "category": "bug",
+          "severity": "high",
+          "title": "Inverted expiration check raises exception on valid tokens",
+          "source": "llm",
+          "suggestion": "    if token.expires_at < datetime.now(UTC):\n        raise TokenExpired(token_id)"
+        }
+      ],
+      "matched": [
+        [
+          0,
+          0
+        ]
+      ],
+      "false_positives": [],
+      "missed": [],
+      "dropped_by_validator": 0,
+      "input_tokens": 1534,
+      "output_tokens": 233,
+      "cost_usd": 0.0,
+      "latency_ms": 1761,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "py-missing-await-01",
+      "kind": "bug",
+      "language": "python",
+      "planted": [
+        {
+          "path": "app/orders/service.py",
+          "lines": [
+            16,
+            16
+          ],
+          "category": "bug",
+          "severity": "high",
+          "description": "session.commit() is a coroutine and is never awaited, so the cancellation is not saved",
+          "accept_categories": [],
+          "bad_suggestions": []
+        }
+      ],
+      "predictions": [
+        {
+          "path": "app/orders/service.py",
+          "line": 16,
+          "start_line": null,
+          "category": "bug",
+          "severity": "high",
+          "title": "Missing await on session.commit()",
+          "source": "llm",
+          "suggestion": "    await session.commit()"
+        }
+      ],
+      "matched": [
+        [
+          0,
+          0
+        ]
+      ],
+      "false_positives": [],
+      "missed": [],
+      "dropped_by_validator": 0,
+      "input_tokens": 1614,
+      "output_tokens": 227,
+      "cost_usd": 0.0,
+      "latency_ms": 1961,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "py-mutable-default-01",
+      "kind": "bug",
+      "language": "python",
+      "planted": [
+        {
+          "path": "app/search/filters.py",
+          "lines": [
+            10,
+            10
+          ],
+          "category": "bug",
+          "severity": "medium",
+          "description": "Default list is shared across calls, so filters leak between requests",
+          "accept_categories": [],
+          "bad_suggestions": []
+        }
+      ],
+      "predictions": [
+        {
+          "path": "app/search/filters.py",
+          "line": 10,
+          "start_line": null,
+          "category": "bug",
+          "severity": "medium",
+          "title": "Mutable default argument used for filters parameter",
+          "source": "llm",
+          "suggestion": "def add_filter(field: str, value: str, filters: list[Filter] | None = None) -> list[Filter]:\n    \"\"\"Append a filter and return the list, for building queries step by step.\"\"\"\n    if filters is None:\n        filters = []\n    filters.append(Filter(field, value))\n    return filters"
+        }
+      ],
+      "matched": [
+        [
+          0,
+          0
+        ]
+      ],
+      "false_positives": [],
+      "missed": [],
+      "dropped_by_validator": 0,
+      "input_tokens": 1536,
+      "output_tokens": 289,
+      "cost_usd": 0.0,
+      "latency_ms": 2315,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "py-n-plus-one-01",
+      "kind": "bug",
+      "language": "python",
+      "planted": [
+        {
+          "path": "reports/views.py",
+          "lines": [
+            7,
+            12
+          ],
+          "category": "performance",
+          "severity": "medium",
+          "description": "N+1: order.customer triggers one query per order (use select_related)",
+          "accept_categories": [],
+          "bad_suggestions": []
+        }
+      ],
+      "predictions": [
+        {
+          "path": "reports/views.py",
+          "line": 12,
+          "start_line": null,
+          "category": "bug",
+          "severity": "medium",
+          "title": "Potential N+1 query on customer relationship",
+          "source": "llm",
+          "suggestion": "    orders = Order.objects.filter(created_at__year=year, created_at__month=month).select_related('customer')"
+        }
+      ],
+      "matched": [],
+      "false_positives": [
+        [
+          0,
+          "wrong_category"
+        ]
+      ],
+      "missed": [
+        0
+      ],
+      "dropped_by_validator": 0,
+      "input_tokens": 1607,
+      "output_tokens": 250,
+      "cost_usd": 0.0,
+      "latency_ms": 2445,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "py-off-by-one-01",
+      "kind": "bug",
+      "language": "python",
+      "planted": [
+        {
+          "path": "app/notify/batch.py",
+          "lines": [
+            11,
+            11
+          ],
+          "category": "bug",
+          "severity": "high",
+          "description": "range(len - 1) never sends the last message",
+          "accept_categories": [],
+          "bad_suggestions": []
+        }
+      ],
+      "predictions": [
+        {
+          "path": "app/notify/batch.py",
+          "line": 11,
+          "start_line": null,
+          "category": "bug",
+          "severity": "high",
+          "title": "Off-by-one error in batch message loop skips the last message",
+          "source": "llm",
+          "suggestion": "    for i in range(len(messages)):\n        send_email(messages[i][\"to\"], messages[i][\"subject\"], messages[i][\"body\"])\n        sent += 1"
+        }
+      ],
+      "matched": [
+        [
+          0,
+          0
+        ]
+      ],
+      "false_positives": [],
+      "missed": [],
+      "dropped_by_validator": 0,
+      "input_tokens": 1614,
+      "output_tokens": 247,
+      "cost_usd": 0.0,
+      "latency_ms": 1831,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "py-path-traversal-01",
+      "kind": "bug",
+      "language": "python",
+      "planted": [
+        {
+          "path": "app/api/files.py",
+          "lines": [
+            12,
+            13
+          ],
+          "category": "security",
+          "severity": "critical",
+          "description": "Path traversal: ../ in filename reads any file on the server",
+          "accept_categories": [],
+          "bad_suggestions": []
+        }
+      ],
+      "predictions": [
+        {
+          "path": "app/api/files.py",
+          "line": 13,
+          "start_line": 10,
+          "category": "security",
+          "severity": "critical",
+          "title": "Path traversal vulnerability allows arbitrary file read",
+          "source": "llm",
+          "suggestion": null
+        }
+      ],
+      "matched": [
+        [
+          0,
+          0
+        ]
+      ],
+      "false_positives": [],
+      "missed": [],
+      "dropped_by_validator": 0,
+      "input_tokens": 1528,
+      "output_tokens": 230,
+      "cost_usd": 0.0,
+      "latency_ms": 1832,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "py-race-condition-01",
+      "kind": "bug",
+      "language": "python",
+      "planted": [
+        {
+          "path": "app/wallet/service.py",
+          "lines": [
+            10,
+            13
+          ],
+          "category": "bug",
+          "severity": "critical",
+          "description": "Read-check-write race: two concurrent withdrawals can both pass the check (double spend)",
+          "accept_categories": [
+            "security"
+          ],
+          "bad_suggestions": []
+        }
+      ],
+      "predictions": [
+        {
+          "path": "app/wallet/service.py",
+          "line": 13,
+          "start_line": 10,
+          "category": "bug",
+          "severity": "critical",
+          "title": "Race condition in withdrawal check-then-act logic",
+          "source": "llm",
+          "suggestion": null
+        }
+      ],
+      "matched": [
+        [
+          0,
+          0
+        ]
+      ],
+      "false_positives": [],
+      "missed": [],
+      "dropped_by_validator": 0,
+      "input_tokens": 1565,
+      "output_tokens": 239,
+      "cost_usd": 0.0,
+      "latency_ms": 2011,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "py-resource-leak-01",
+      "kind": "bug",
+      "language": "python",
+      "planted": [
+        {
+          "path": "app/audit/log.py",
+          "lines": [
+            7,
+            7
+          ],
+          "category": "bug",
+          "severity": "medium",
+          "description": "Connection is never closed: one leaked handle per audited request",
+          "accept_categories": [
+            "performance"
+          ],
+          "bad_suggestions": [
+            "(?s)\\A(?!.*(?:\\.close\\(|closing\\())(?=.*\\bwith\\s+sqlite3\\.connect\\()"
+          ]
+        }
+      ],
+      "predictions": [
+        {
+          "path": "app/audit/log.py",
+          "line": 9,
+          "start_line": 7,
+          "category": "bug",
+          "severity": "medium",
+          "title": "Database connection is not closed on exception",
+          "source": "llm",
+          "suggestion": "def record(event: str, user_id: int) -> None:\n    with sqlite3.connect(DB_PATH) as conn:\n        conn.execute(\"INSERT INTO audit (event, user_id) VALUES (?, ?)\", (event, user_id))\n        conn.commit()"
+        }
+      ],
+      "matched": [
+        [
+          0,
+          0
+        ]
+      ],
+      "false_positives": [],
+      "missed": [],
+      "dropped_by_validator": 0,
+      "input_tokens": 1541,
+      "output_tokens": 300,
+      "cost_usd": 0.0,
+      "latency_ms": 2159,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "py-sql-injection-01",
+      "kind": "bug",
+      "language": "python",
+      "planted": [
+        {
+          "path": "app/catalog/search.py",
+          "lines": [
+            15,
+            17
+          ],
+          "category": "security",
+          "severity": "critical",
+          "description": "SQL injection: search term interpolated into the query",
+          "accept_categories": [],
+          "bad_suggestions": []
+        }
+      ],
+      "predictions": [
+        {
+          "path": "app/catalog/search.py",
+          "line": 17,
+          "start_line": 15,
+          "category": "security",
+          "severity": "critical",
+          "title": "SQL Injection in product search",
+          "source": "llm",
+          "suggestion": "        cur.execute(\n            \"SELECT id, name, price FROM products WHERE name ILIKE %s LIMIT %s\",\n            (f\"%{term}%\", limit)\n        )"
+        }
+      ],
+      "matched": [
+        [
+          0,
+          0
+        ]
+      ],
+      "false_positives": [],
+      "missed": [],
+      "dropped_by_validator": 0,
+      "input_tokens": 1617,
+      "output_tokens": 243,
+      "cost_usd": 0.0,
+      "latency_ms": 1724,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "py-sqlite-with-leak-01",
+      "kind": "bug",
+      "language": "python",
+      "planted": [
+        {
+          "path": "app/reports/totals.py",
+          "lines": [
+            7,
+            7
+          ],
+          "category": "bug",
+          "severity": "medium",
+          "description": "`with sqlite3.connect()` commits or rolls back but never closes: one leaked connection per call",
+          "accept_categories": [
+            "performance"
+          ],
+          "bad_suggestions": [
+            "(?s)\\A(?!.*(?:\\.close\\(|closing\\())(?=.*\\bwith\\s+sqlite3\\.connect\\()"
+          ]
+        }
+      ],
+      "predictions": [],
+      "matched": [],
+      "false_positives": [],
+      "missed": [
+        0
+      ],
+      "dropped_by_validator": 0,
+      "input_tokens": 1554,
+      "output_tokens": 64,
+      "cost_usd": 0.0,
+      "latency_ms": 1428,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "py-swallowed-exception-01",
+      "kind": "bug",
+      "language": "python",
+      "planted": [
+        {
+          "path": "app/checkout/pay.py",
+          "lines": [
+            11,
+            12
+          ],
+          "category": "error_handling",
+          "severity": "critical",
+          "description": "Exception swallowed: a failed charge still marks the order paid",
+          "accept_categories": [],
+          "bad_suggestions": []
+        }
+      ],
+      "predictions": [
+        {
+          "path": "app/checkout/pay.py",
+          "line": 13,
+          "start_line": 9,
+          "category": "bug",
+          "severity": "critical",
+          "title": "Payment failures are swallowed and orders marked as paid",
+          "source": "llm",
+          "suggestion": null
+        }
+      ],
+      "matched": [
+        [
+          0,
+          0
+        ]
+      ],
+      "false_positives": [],
+      "missed": [],
+      "dropped_by_validator": 0,
+      "input_tokens": 1562,
+      "output_tokens": 218,
+      "cost_usd": 0.0,
+      "latency_ms": 1863,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "py-wrong-comparison-01",
+      "kind": "bug",
+      "language": "python",
+      "planted": [
+        {
+          "path": "app/admin/permissions.py",
+          "lines": [
+            5,
+            5
+          ],
+          "category": "bug",
+          "severity": "high",
+          "description": "`is` compares identity, not value: admins may be denied",
+          "accept_categories": [],
+          "bad_suggestions": []
+        }
+      ],
+      "predictions": [
+        {
+          "path": "app/admin/permissions.py",
+          "line": 5,
+          "start_line": null,
+          "category": "bug",
+          "severity": "high",
+          "title": "Use of 'is' operator for string comparison",
+          "source": "llm",
+          "suggestion": "    if user.role == \"admin\":"
+        }
+      ],
+      "matched": [
+        [
+          0,
+          0
+        ]
+      ],
+      "false_positives": [],
+      "missed": [],
+      "dropped_by_validator": 0,
+      "input_tokens": 1501,
+      "output_tokens": 207,
+      "cost_usd": 0.0,
+      "latency_ms": 2166,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "sql-missing-where-01",
+      "kind": "bug",
+      "language": "sql",
+      "planted": [
+        {
+          "path": "db/scripts/2031_07_expire_trials.sql",
+          "lines": [
+            4,
+            6
+          ],
+          "category": "bug",
+          "severity": "critical",
+          "description": "UPDATE has no WHERE clause: cancels every subscription, not just expired trials",
+          "accept_categories": [],
+          "bad_suggestions": []
+        }
+      ],
+      "predictions": [
+        {
+          "path": "db/scripts/2031_07_expire_trials.sql",
+          "line": 6,
+          "start_line": 4,
+          "category": "bug",
+          "severity": "critical",
+          "title": "UPDATE statement lacks a WHERE clause, cancelling all subscriptions",
+          "source": "llm",
+          "suggestion": null
+        }
+      ],
+      "matched": [
+        [
+          0,
+          0
+        ]
+      ],
+      "false_positives": [],
+      "missed": [],
+      "dropped_by_validator": 0,
+      "input_tokens": 1505,
+      "output_tokens": 235,
+      "cost_usd": 0.0,
+      "latency_ms": 1771,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "sql-not-null-migration-01",
+      "kind": "bug",
+      "language": "sql",
+      "planted": [
+        {
+          "path": "db/migrations/0042_order_currency.sql",
+          "lines": [
+            2,
+            2
+          ],
+          "category": "bug",
+          "severity": "high",
+          "description": "Adding a NOT NULL column without a default fails on a table that already has rows",
+          "accept_categories": [],
+          "bad_suggestions": []
+        }
+      ],
+      "predictions": [
+        {
+          "path": "db/migrations/0042_order_currency.sql",
+          "line": 2,
+          "start_line": null,
+          "category": "bug",
+          "severity": "high",
+          "title": "Adding NOT NULL column without a default to an existing table",
+          "source": "llm",
+          "suggestion": null
+        }
+      ],
+      "matched": [
+        [
+          0,
+          0
+        ]
+      ],
+      "false_positives": [],
+      "missed": [],
+      "dropped_by_validator": 0,
+      "input_tokens": 1478,
+      "output_tokens": 214,
+      "cost_usd": 0.0,
+      "latency_ms": 1763,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "ts-command-injection-01",
+      "kind": "bug",
+      "language": "typescript",
+      "planted": [
+        {
+          "path": "src/build/clone.ts",
+          "lines": [
+            8,
+            8
+          ],
+          "category": "security",
+          "severity": "critical",
+          "description": "Command injection: repoUrl from the request runs in a shell",
+          "accept_categories": [],
+          "bad_suggestions": []
+        }
+      ],
+      "predictions": [
+        {
+          "path": "src/build/clone.ts",
+          "line": 8,
+          "start_line": null,
+          "category": "security",
+          "severity": "critical",
+          "title": "Command injection vulnerability via repoUrl",
+          "source": "llm",
+          "suggestion": null
+        }
+      ],
+      "matched": [
+        [
+          0,
+          0
+        ]
+      ],
+      "false_positives": [],
+      "missed": [],
+      "dropped_by_validator": 0,
+      "input_tokens": 1543,
+      "output_tokens": 206,
+      "cost_usd": 0.0,
+      "latency_ms": 2098,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "ts-missing-await-01",
+      "kind": "bug",
+      "language": "typescript",
+      "planted": [
+        {
+          "path": "src/routes/profile.ts",
+          "lines": [
+            7,
+            7
+          ],
+          "category": "bug",
+          "severity": "high",
+          "description": "getUser is async: the Promise is always truthy and user.name is undefined",
+          "accept_categories": [],
+          "bad_suggestions": []
+        }
+      ],
+      "predictions": [
+        {
+          "path": "src/routes/profile.ts",
+          "line": 7,
+          "start_line": null,
+          "category": "bug",
+          "severity": "medium",
+          "title": "Missing await on getUser",
+          "source": "llm",
+          "suggestion": "  const user = await getUser(req.params.id);"
+        }
+      ],
+      "matched": [
+        [
+          0,
+          0
+        ]
+      ],
+      "false_positives": [],
+      "missed": [],
+      "dropped_by_validator": 0,
+      "input_tokens": 1576,
+      "output_tokens": 234,
+      "cost_usd": 0.0,
+      "latency_ms": 2139,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "ts-missing-validation-01",
+      "kind": "bug",
+      "language": "typescript",
+      "planted": [
+        {
+          "path": "src/routes/transfers.ts",
+          "lines": [
+            10,
+            11
+          ],
+          "category": "security",
+          "severity": "critical",
+          "description": "amount is not validated: negative or NaN amounts move money the wrong way",
+          "accept_categories": [
+            "bug"
+          ],
+          "bad_suggestions": []
+        }
+      ],
+      "predictions": [
+        {
+          "path": "src/routes/transfers.ts",
+          "line": 10,
+          "start_line": null,
+          "category": "bug",
+          "severity": "medium",
+          "title": "Missing validation for transfer amount",
+          "source": "llm",
+          "suggestion": null
+        }
+      ],
+      "matched": [
+        [
+          0,
+          0
+        ]
+      ],
+      "false_positives": [],
+      "missed": [],
+      "dropped_by_validator": 0,
+      "input_tokens": 1630,
+      "output_tokens": 209,
+      "cost_usd": 0.0,
+      "latency_ms": 1707,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "ts-sort-numbers-01",
+      "kind": "bug",
+      "language": "typescript",
+      "planted": [
+        {
+          "path": "src/leaderboard.ts",
+          "lines": [
+            5,
+            5
+          ],
+          "category": "bug",
+          "severity": "medium",
+          "description": "Default sort is lexicographic: [100, 25, 9] sorts wrong",
+          "accept_categories": [],
+          "bad_suggestions": []
+        }
+      ],
+      "predictions": [
+        {
+          "path": "src/leaderboard.ts",
+          "line": 5,
+          "start_line": 3,
+          "category": "bug",
+          "severity": "high",
+          "title": "Array.prototype.sort sorts elements alphabetically by default",
+          "source": "llm",
+          "suggestion": "export function topThree(scores: Score[]): number[] {\n  const points = scores.map((s) => s.points);\n  return points.sort((a, b) => b - a).slice(0, 3);\n}"
+        }
+      ],
+      "matched": [
+        [
+          0,
+          0
+        ]
+      ],
+      "false_positives": [],
+      "missed": [],
+      "dropped_by_validator": 0,
+      "input_tokens": 1507,
+      "output_tokens": 269,
+      "cost_usd": 0.0,
+      "latency_ms": 2573,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "ts-unhandled-promise-01",
+      "kind": "bug",
+      "language": "typescript",
+      "planted": [
+        {
+          "path": "src/routes/inventory.ts",
+          "lines": [
+            8,
+            8
+          ],
+          "category": "error_handling",
+          "severity": "high",
+          "description": "Promise from syncInventory is neither awaited nor caught: a rejection crashes the process",
+          "accept_categories": [],
+          "bad_suggestions": []
+        }
+      ],
+      "predictions": [
+        {
+          "path": "src/routes/inventory.ts",
+          "line": 8,
+          "start_line": null,
+          "category": "error_handling",
+          "severity": "medium",
+          "title": "Unhandled promise rejection from asynchronous syncInventory call",
+          "source": "llm",
+          "suggestion": null
+        }
+      ],
+      "matched": [
+        [
+          0,
+          0
+        ]
+      ],
+      "false_positives": [],
+      "missed": [],
+      "dropped_by_validator": 0,
+      "input_tokens": 1547,
+      "output_tokens": 221,
+      "cost_usd": 0.0,
+      "latency_ms": 1931,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "tsx-hook-deps-01",
+      "kind": "bug",
+      "language": "typescript",
+      "planted": [
+        {
+          "path": "src/components/OrderHistory.tsx",
+          "lines": [
+            9,
+            9
+          ],
+          "category": "bug",
+          "severity": "medium",
+          "description": "Empty dependency array: switching userId keeps showing the first user's orders",
+          "accept_categories": [],
+          "bad_suggestions": []
+        }
+      ],
+      "predictions": [
+        {
+          "path": "src/components/OrderHistory.tsx",
+          "line": 9,
+          "start_line": 7,
+          "category": "bug",
+          "severity": "medium",
+          "title": "Missing `userId` in useEffect dependency array",
+          "source": "llm",
+          "suggestion": "  useEffect(() => {\n    fetchOrders(userId).then(setOrders);\n  }, [userId]);"
+        }
+      ],
+      "matched": [
+        [
+          0,
+          0
+        ]
+      ],
+      "false_positives": [],
+      "missed": [],
+      "dropped_by_validator": 0,
+      "input_tokens": 1627,
+      "output_tokens": 236,
+      "cost_usd": 0.0,
+      "latency_ms": 1928,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    },
+    {
+      "id": "tsx-xss-01",
+      "kind": "bug",
+      "language": "typescript",
+      "planted": [
+        {
+          "path": "src/components/CommentView.tsx",
+          "lines": [
+            7,
+            7
+          ],
+          "category": "security",
+          "severity": "critical",
+          "description": "XSS: user-written comment body injected as HTML",
+          "accept_categories": [],
+          "bad_suggestions": []
+        }
+      ],
+      "predictions": [
+        {
+          "path": "src/components/CommentView.tsx",
+          "line": 7,
+          "start_line": null,
+          "category": "security",
+          "severity": "high",
+          "title": "Potential XSS via dangerouslySetInnerHTML",
+          "source": "llm",
+          "suggestion": null
+        }
+      ],
+      "matched": [
+        [
+          0,
+          0
+        ]
+      ],
+      "false_positives": [],
+      "missed": [],
+      "dropped_by_validator": 0,
+      "input_tokens": 1543,
+      "output_tokens": 204,
+      "cost_usd": 0.0,
+      "latency_ms": 1523,
+      "llm_calls": 1,
+      "attempts": 1,
+      "errors": []
+    }
+  ],
+  "metrics": {
+    "cases": 31,
+    "bug_cases": 26,
+    "clean_cases": 5,
+    "planted_bugs": 26,
+    "comments": 25,
+    "tp": 24,
+    "fp": 1,
+    "fn": 2,
+    "precision": 0.96,
+    "recall": 0.9230769230769231,
+    "f1": 0.9411764705882353,
+    "fp_per_clean_case": 0.0,
+    "avg_comments_per_case": 0.8064516129032258,
+    "fp_reasons": {
+      "wrong_category": 1
+    },
+    "per_category": {
+      "bug": {
+        "planted": 17,
+        "found": 16,
+        "predicted": 19,
+        "correct": 18,
+        "recall": 0.9411764705882353,
+        "precision": 0.9473684210526315,
+        "f1": 0.9442622950819671
+      },
+      "error_handling": {
+        "planted": 2,
+        "found": 2,
+        "predicted": 1,
+        "correct": 1,
+        "recall": 1.0,
+        "precision": 1.0,
+        "f1": 1.0
+      },
+      "performance": {
+        "planted": 1,
+        "found": 0,
+        "predicted": 0,
+        "correct": 0,
+        "recall": 0.0,
+        "precision": null,
+        "f1": null
+      },
+      "security": {
+        "planted": 6,
+        "found": 6,
+        "predicted": 5,
+        "correct": 5,
+        "recall": 1.0,
+        "precision": 1.0,
+        "f1": 1.0
+      }
+    },
+    "severity_exact": 0.7083333333333334,
+    "severity_within_one": 0.9583333333333334,
+    "fixes_checked": 1,
+    "bad_fixes": 1,
+    "cost_usd_total": 0.0,
+    "cost_usd_avg": 0.0,
+    "latency_p50_ms": 1863,
+    "latency_p95_ms": 2445,
+    "input_tokens": 49385,
+    "output_tokens": 6368,
+    "cases_with_errors": 0
+  }
+}
