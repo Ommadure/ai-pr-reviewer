@@ -1,7 +1,7 @@
 """review_runs / llm_calls / review_comments access."""
 
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import and_, func, or_, select, update
@@ -13,6 +13,7 @@ from app.review.incremental import CommentStatus, OpenComment
 from app.review.models import LLMCallRecord
 
 ACTIVE_STATUSES = ("queued", "running")
+MANUAL_TRIGGERS = ("command", "manual")  # /reviewpilot review, the dashboard's button
 
 
 def to_money(value: float) -> Decimal:
@@ -41,6 +42,20 @@ async def create_queued(
     return run
 
 
+async def manual_runs_last_hour(session: AsyncSession, pull_request_id: int) -> int:
+    """The rate limit's count: manual reviews are already rows, so no separate counter."""
+    count = await session.scalar(
+        select(func.count())
+        .select_from(ReviewRun)
+        .where(
+            ReviewRun.pull_request_id == pull_request_id,
+            ReviewRun.trigger.in_(MANUAL_TRIGGERS),
+            ReviewRun.created_at > func.now() - timedelta(hours=1),
+        )
+    )
+    return count or 0
+
+
 async def get_with_context(session: AsyncSession, run_id: int) -> ReviewRun | None:
     """Run + PR + repository + installation, loaded in one query."""
     result = await session.scalars(
@@ -67,8 +82,8 @@ async def skip_queued_for_pr(session: AsyncSession, pull_request_id: int, reason
 async def fail_stuck_runs(
     session: AsyncSession, *, started_before: datetime, queued_before: datetime
 ) -> int:
-    """Runs no task will ever finish: 'running' past any time limit (the worker died
-    hard), or 'queued' for far too long (the enqueue itself was lost)."""
+    """Runs no job will ever finish: 'running' past any time limit (the worker died
+    hard), or 'queued' for far too long (the worker is down or its job failed)."""
     result = await session.execute(
         update(ReviewRun)
         .where(

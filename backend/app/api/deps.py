@@ -7,8 +7,6 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
-from app.core.rate_limit import RateLimiter, RedisRateLimiter
-from app.core.redis import get_redis
 from app.core.security import SESSION_COOKIE, SessionTokens, TokenCipher
 from app.db.session import get_session
 from app.github.client import GitHubError
@@ -43,8 +41,11 @@ def get_account_services(request: Request, settings: SettingsDep) -> AccountServ
     return AccountServices(oauth, TokenCipher(settings.encryption_key.get_secret_value()))
 
 
-def get_rate_limiter() -> RateLimiter:
-    return RedisRateLimiter(get_redis())
+def wake_worker(request: Request) -> None:
+    """Start newly queued jobs now. Without a worker (tests), they wait in the table."""
+    worker = getattr(request.app.state, "worker", None)
+    if worker is not None:
+        worker.wake()
 
 
 AccountsDep = Annotated[AccountServices, Depends(get_account_services)]

@@ -2,8 +2,7 @@
 #
 # Major versions of the packages below are ignored: in September 2026 merging them one PR
 # at a time broke main (react-dom 19 beside react 18, TypeScript 7 before typescript-eslint
-# supported it, redis 8 pulling an alpha kombu). Upgrade those deliberately, together, in
-# one PR. Minor and patch updates (security fixes included) still arrive, grouped, so one
+# supported it). Upgrade those deliberately, together, in one PR. Minor and patch updates (security fixes included) still arrive, grouped, so one
 # weekly PR per ecosystem replaces a pile of single-package ones.
 version: 2
 updates:
@@ -11,10 +10,6 @@ updates:
     directory: /backend
     schedule: { interval: weekly }
     open-pull-requests-limit: 5
-    ignore:
-      # redis 8 needs a stable kombu that supports it (see backend/pyproject.toml).
-      - dependency-name: redis
-        update-types: ["version-update:semver-major"]
     groups:
       backend-minor-and-patch:
         update-types: [minor, patch]

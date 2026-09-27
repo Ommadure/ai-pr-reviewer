@@ -1,6 +1,6 @@
 # ADR 0004: Run async code inside Celery tasks with `asyncio.run`
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR 0016](0016-postgres-job-queue-in-process-worker.md): the worker now runs on the API's event loop.
 - **Date:** 2026-09-24
 
 ## Context

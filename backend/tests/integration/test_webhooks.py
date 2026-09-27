@@ -1,4 +1,4 @@
-"""Webhook endpoint → router → real Postgres. Celery is replaced by a recording dispatcher."""
+"""Webhook endpoint → router → real Postgres, jobs table included (no worker runs)."""
 
 from typing import Any
 
@@ -11,11 +11,12 @@ from app.config.repo_config import parse_repo_config
 from app.github.signatures import compute_signature
 from app.models import Installation, PullRequest, Repository, ReviewRun, WebhookDelivery
 from app.repositories import repo_configs
+from app.services.commands import CommandJob
 from tests.helpers import (
     BOT_LOGIN,
     WEBHOOK_SECRET,
-    RecordingDispatcher,
     load_webhook,
+    queued_jobs,
     send_webhook,
 )
 
@@ -73,7 +74,7 @@ async def test_rejects_non_json_body(api: httpx.AsyncClient) -> None:
 
 
 async def test_duplicate_delivery_is_processed_once(
-    api: httpx.AsyncClient, sessionmaker: Sessions, dispatcher: RecordingDispatcher
+    api: httpx.AsyncClient, sessionmaker: Sessions
 ) -> None:
     payload = load_webhook("pull_request_opened")
     first = await send_webhook(api, "pull_request", payload, delivery_id="same-id")
@@ -82,11 +83,11 @@ async def test_duplicate_delivery_is_processed_once(
     assert first.status_code == 202
     assert second.status_code == 200
     assert second.json() == {"status": "duplicate"}
-    assert len(dispatcher.jobs) == 1
+    assert len(await queued_jobs(sessionmaker, "review")) == 1
 
 
 async def test_failed_delivery_can_be_redelivered(
-    api: httpx.AsyncClient, sessionmaker: Sessions, dispatcher: RecordingDispatcher
+    api: httpx.AsyncClient, sessionmaker: Sessions
 ) -> None:
     broken = load_webhook("pull_request_opened")
     del broken["pull_request"]["head"]  # a field we rely on is missing
@@ -102,7 +103,7 @@ async def test_failed_delivery_can_be_redelivered(
     assert response.status_code == 202
     delivery = await _delivery(sessionmaker, "retry-me")
     assert delivery is not None and delivery.status == "queued" and delivery.error is None
-    assert len(dispatcher.jobs) == 1
+    assert len(await queued_jobs(sessionmaker, "review")) == 1
 
 
 # ---- installation sync ----
@@ -155,7 +156,7 @@ async def test_installation_lifecycle(
 
 
 async def test_pull_request_opened_stores_pr_and_enqueues_review(
-    api: httpx.AsyncClient, sessionmaker: Sessions, dispatcher: RecordingDispatcher
+    api: httpx.AsyncClient, sessionmaker: Sessions
 ) -> None:
     # The App was installed before we were listening: no installation event seen.
     response = await send_webhook(
@@ -174,7 +175,7 @@ async def test_pull_request_opened_stores_pr_and_enqueues_review(
         pr.id, "queued", "opened", "full",
     )  # fmt: skip
     assert (run.head_sha, run.base_sha) == ("a" * 40, "b" * 40)
-    assert [job.run_id for job in dispatcher.jobs] == [run.id]
+    assert [j.payload["run_id"] for j in await queued_jobs(sessionmaker, "review")] == [run.id]
     delivery = await _delivery(sessionmaker, "pr-1")
     assert delivery is not None and delivery.status == "queued"
 
@@ -189,7 +190,6 @@ async def test_pull_request_opened_stores_pr_and_enqueues_review(
 async def test_events_from_bots_are_ignored(
     api: httpx.AsyncClient,
     sessionmaker: Sessions,
-    dispatcher: RecordingDispatcher,
     sender: dict[str, str],
 ) -> None:
     payload = load_webhook("pull_request_opened") | {"sender": sender}
@@ -198,12 +198,12 @@ async def test_events_from_bots_are_ignored(
     assert response.json() == {"status": "ignored"}
     delivery = await _delivery(sessionmaker, "bot")
     assert delivery is not None and delivery.ignore_reason == "bot_sender"
-    assert dispatcher.jobs == []
+    assert await queued_jobs(sessionmaker, "review") == []
     assert await _all(sessionmaker, PullRequest) == []
 
 
 async def test_draft_pull_request_is_stored_but_not_reviewed(
-    api: httpx.AsyncClient, sessionmaker: Sessions, dispatcher: RecordingDispatcher
+    api: httpx.AsyncClient, sessionmaker: Sessions
 ) -> None:
     payload = load_webhook("pull_request_opened")
     payload["pull_request"]["draft"] = True
@@ -212,11 +212,11 @@ async def test_draft_pull_request_is_stored_but_not_reviewed(
     delivery = await _delivery(sessionmaker, "draft")
     assert delivery is not None and delivery.ignore_reason == "draft"
     assert len(await _all(sessionmaker, PullRequest)) == 1
-    assert dispatcher.jobs == []
+    assert await queued_jobs(sessionmaker, "review") == []
 
 
 async def test_drafts_reviewed_when_cached_config_allows(
-    api: httpx.AsyncClient, sessionmaker: Sessions, dispatcher: RecordingDispatcher
+    api: httpx.AsyncClient, sessionmaker: Sessions
 ) -> None:
     await send_webhook(api, "installation", load_webhook("installation_created"))
     [repo, *_] = await _all(sessionmaker, Repository)
@@ -234,11 +234,11 @@ async def test_drafts_reviewed_when_cached_config_allows(
     payload["pull_request"]["draft"] = True
     response = await send_webhook(api, "pull_request", payload)
     assert response.json() == {"status": "queued"}
-    assert len(dispatcher.jobs) == 1
+    assert len(await queued_jobs(sessionmaker, "review")) == 1
 
 
 async def test_disabled_repository_is_not_reviewed(
-    api: httpx.AsyncClient, sessionmaker: Sessions, dispatcher: RecordingDispatcher
+    api: httpx.AsyncClient, sessionmaker: Sessions
 ) -> None:
     await send_webhook(api, "installation", load_webhook("installation_created"))
     async with sessionmaker() as session:
@@ -249,12 +249,10 @@ async def test_disabled_repository_is_not_reviewed(
 
     delivery = await _delivery(sessionmaker, "d")
     assert delivery is not None and delivery.ignore_reason == "repo_disabled"
-    assert dispatcher.jobs == []
+    assert await queued_jobs(sessionmaker, "review") == []
 
 
-async def test_new_commits_update_head_sha(
-    api: httpx.AsyncClient, sessionmaker: Sessions, dispatcher: RecordingDispatcher
-) -> None:
+async def test_new_commits_update_head_sha(api: httpx.AsyncClient, sessionmaker: Sessions) -> None:
     await send_webhook(api, "pull_request", load_webhook("pull_request_opened"))
     pushed = load_webhook("pull_request_opened") | {"action": "synchronize"}
     pushed["pull_request"]["head"]["sha"] = "c" * 40
@@ -268,7 +266,7 @@ async def test_new_commits_update_head_sha(
         ("opened", "a" * 40),
         ("synchronize", "c" * 40),
     ]
-    assert len(dispatcher.jobs) == 2
+    assert len(await queued_jobs(sessionmaker, "review")) == 2
 
 
 async def test_closing_a_pr_skips_its_queued_reviews(
@@ -295,13 +293,14 @@ async def test_merged_pull_request_state(api: httpx.AsyncClient, sessionmaker: S
 
 
 async def test_slash_command_is_queued_for_the_worker(
-    api: httpx.AsyncClient, sessionmaker: Sessions, dispatcher: RecordingDispatcher
+    api: httpx.AsyncClient, sessionmaker: Sessions
 ) -> None:
     response = await send_webhook(
         api, "issue_comment", load_webhook("issue_comment_created"), delivery_id="c"
     )
     assert response.json() == {"status": "queued"}
-    [job] = dispatcher.commands
+    [queued] = await queued_jobs(sessionmaker, "command")
+    job = CommandJob(**queued.payload)
     [repo] = await _all(sessionmaker, Repository)
     assert (job.command, job.pr_number, job.comment_id, job.author) == (
         "review",
@@ -323,7 +322,6 @@ async def test_slash_command_is_queued_for_the_worker(
 async def test_ordinary_comments_are_ignored(
     api: httpx.AsyncClient,
     sessionmaker: Sessions,
-    dispatcher: RecordingDispatcher,
     body: str,
     reason: str,
 ) -> None:
@@ -332,7 +330,7 @@ async def test_ordinary_comments_are_ignored(
     await send_webhook(api, "issue_comment", payload, delivery_id="plain")
     delivery = await _delivery(sessionmaker, "plain")
     assert delivery is not None and delivery.ignore_reason == reason
-    assert dispatcher.commands == []
+    assert await queued_jobs(sessionmaker, "command") == []
 
 
 async def test_unknown_events_are_recorded_as_ignored(

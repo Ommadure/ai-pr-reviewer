@@ -1,23 +1,24 @@
 """The review pipeline around the pure engine: every side effect lives here.
 
-    run (queued) ─► lock PR ─► checks: still open? head moved? ─► config (default branch)
+    run (queued) ─► checks: still open? head moved? ─► config (default branch)
        ─► check run "in progress" ─► PR files ─► run_review() ─► head moved? ─► post ONE review
-       (422 → post comments one by one) ─► check run summary ─► persist ─► unlock
+       (422 → post comments one by one) ─► check run summary ─► persist
 
 Guarantees (ADR 0010):
-- one review at a time per PR (Redis lock);
-- a task that runs twice for the same run does nothing the second time (run status);
+- one review at a time per PR (the job queue's lock_key, ADR 0016);
+- a job that runs twice for the same run does nothing the second time (run status);
 - never posts for a commit that is no longer the PR head (stale checks);
 - never repeats a comment already posted on the PR (fingerprints + unique index);
 - never blocks a merge: check runs end success / neutral / skipped only.
 """
 
+import asyncio
 import time
 from collections.abc import Sequence
-from contextlib import AbstractAsyncContextManager, suppress
+from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Protocol, cast
+from typing import cast
 
 import httpx
 import structlog
@@ -75,14 +76,8 @@ DROP_BUCKETS = {
 }
 
 
-class PRLock(Protocol):
-    def hold(self, pull_request_id: int) -> AbstractAsyncContextManager[bool]:
-        """Yields True if this caller got the lock, False if someone else holds it."""
-        ...
-
-
-class ReviewBusy(Exception):
-    """Another review of this PR is running; retry shortly."""
+# Past this, the review fails as "timeout" (the worker's hard limit is 300 s).
+REVIEW_TIME_LIMIT_SECONDS = 240
 
 
 class RetryableReviewError(Exception):
@@ -99,7 +94,6 @@ class ReviewDeps:
     github_auth: GitHubAppAuth
     llm: LLMProvider
     model: str
-    lock: PRLock
     summary_model: str | None = None
     budget: ReviewBudget = field(default_factory=ReviewBudget)
     prices: PriceTable = field(default_factory=PriceTable)
@@ -146,25 +140,10 @@ async def execute_review_run(
 ) -> RunOutcome:
     async with deps.sessionmaker() as session:
         run = await review_runs.get_with_context(session, run_id)
-    if run is None:
-        return RunOutcome("missing")
-    if run.status not in review_runs.ACTIVE_STATUSES:
-        return RunOutcome(run.status, reason="already_finished")  # duplicate delivery of the task
-
-    async with deps.lock.hold(run.pull_request_id) as acquired:
-        if not acquired:
-            raise ReviewBusy(f"pull request {run.pull_request_id} is being reviewed")
-        return await _execute_locked(deps, run_id, final_attempt=final_attempt)
-
-
-async def _execute_locked(deps: ReviewDeps, run_id: int, *, final_attempt: bool) -> RunOutcome:
-    async with deps.sessionmaker() as session:
-        run = await review_runs.get_with_context(session, run_id)
         if run is None:
             return RunOutcome("missing")
-        # Re-check under the lock: a previous holder may have finished this very run.
         if run.status not in review_runs.ACTIVE_STATUSES:
-            return RunOutcome(run.status, reason="already_finished")
+            return RunOutcome(run.status, reason="already_finished")  # the job ran twice
         pr = run.pull_request
         if pr.state != "open":
             return await _finish(session, run, "skipped", "pr_closed")
@@ -201,138 +180,141 @@ async def _execute_locked(deps: ReviewDeps, run_id: int, *, final_attempt: bool)
         return outcome
 
     try:
-        loaded = await load_repo_config(deps.sessionmaker, github, repository, default_branch)
-        config = loaded.config
-        config_warnings = loaded.parsed.errors + loaded.parsed.warnings
-        if not config.enabled:
-            return await skip("skipped", "disabled_in_config")
+        # The time limit raises TimeoutError here, inside the try, so a slow review is
+        # recorded and its check run closed like any other failure.
+        async with asyncio.timeout(REVIEW_TIME_LIMIT_SECONDS):
+            loaded = await load_repo_config(deps.sessionmaker, github, repository, default_branch)
+            config = loaded.config
+            config_warnings = loaded.parsed.errors + loaded.parsed.warnings
+            if not config.enabled:
+                return await skip("skipped", "disabled_in_config")
 
-        live = await github.get_pull_request(owner, name, pr_number)
-        if live.state != "open":
-            return await skip("skipped", "pr_closed")
-        if live.head_sha != head_sha:
-            return await skip("superseded", "newer_commit")
-        if live.draft and not config.review_drafts:
-            return await skip("skipped", "draft")
+            live = await github.get_pull_request(owner, name, pr_number)
+            if live.state != "open":
+                return await skip("skipped", "pr_closed")
+            if live.head_sha != head_sha:
+                return await skip("superseded", "newer_commit")
+            if live.draft and not config.review_drafts:
+                return await skip("skipped", "draft")
 
-        pr_files = _to_file_diffs(await github.list_pull_request_files(owner, name, pr_number))
-        plan = await _plan_diff(
-            deps,
-            github,
-            owner,
-            name,
-            pr_id,
-            pr_files,
-            requested_mode=requested_mode,
-            last_reviewed=last_reviewed,
-            head_sha=head_sha,
-        )
-        if plan.nothing_new:
-            return await skip("skipped", "no_new_changes")
-        await _update_run(
-            deps, run_id, mode=plan.mode, mode_reason=plan.mode_reason, from_sha=plan.from_sha
-        )
-        if plan.status_changes:
-            async with deps.sessionmaker() as session:
-                await review_runs.set_comment_statuses(session, plan.status_changes)
-                await session.commit()
-            logger.info("review.comments_resolved", changes=len(plan.status_changes))
-
-        if check_run_id is None:
-            check_run_id = await github.create_check_run(
+            pr_files = _to_file_diffs(await github.list_pull_request_files(owner, name, pr_number))
+            plan = await _plan_diff(
+                deps,
+                github,
                 owner,
                 name,
-                name=review_report.CHECK_RUN_NAME,
+                pr_id,
+                pr_files,
+                requested_mode=requested_mode,
+                last_reviewed=last_reviewed,
                 head_sha=head_sha,
-                output=CheckRunOutput(
-                    title="Reviewing…", summary="ReviewPilot is reviewing this PR."
-                ),
             )
-            await _update_run(deps, run_id, check_run_id=check_run_id)
+            if plan.nothing_new:
+                return await skip("skipped", "no_new_changes")
+            await _update_run(
+                deps, run_id, mode=plan.mode, mode_reason=plan.mode_reason, from_sha=plan.from_sha
+            )
+            if plan.status_changes:
+                async with deps.sessionmaker() as session:
+                    await review_runs.set_comment_statuses(session, plan.status_changes)
+                    await session.commit()
+                logger.info("review.comments_resolved", changes=len(plan.status_changes))
 
-        async with deps.sessionmaker() as session:
-            already_posted = await review_runs.posted_fingerprints(session, pr_id)
-        result = await run_review(
-            plan.files,
-            config,
-            _pr_context(live, repository.full_name),
-            deps.llm,
-            model=deps.model,
-            summary_model=deps.summary_model,
-            budget=deps.budget,
-            prices=deps.prices,
-            existing_fingerprints=already_posted,
-            prompt_version=deps.prompt_version,
-        )
-        result.skipped_files.extend(plan.skipped)
+            if check_run_id is None:
+                check_run_id = await github.create_check_run(
+                    owner,
+                    name,
+                    name=review_report.CHECK_RUN_NAME,
+                    head_sha=head_sha,
+                    output=CheckRunOutput(
+                        title="Reviewing…", summary="ReviewPilot is reviewing this PR."
+                    ),
+                )
+                await _update_run(deps, run_id, check_run_id=check_run_id)
 
-        if await _current_head(deps, pr_id) != head_sha:
-            # A push landed while we were thinking: comments would point at old code.
+            async with deps.sessionmaker() as session:
+                already_posted = await review_runs.posted_fingerprints(session, pr_id)
+            result = await run_review(
+                plan.files,
+                config,
+                _pr_context(live, repository.full_name),
+                deps.llm,
+                model=deps.model,
+                summary_model=deps.summary_model,
+                budget=deps.budget,
+                prices=deps.prices,
+                existing_fingerprints=already_posted,
+                prompt_version=deps.prompt_version,
+            )
+            result.skipped_files.extend(plan.skipped)
+
+            if await _current_head(deps, pr_id) != head_sha:
+                # A push landed while we were thinking: comments would point at old code.
+                await _complete_check(
+                    github,
+                    owner,
+                    name,
+                    check_run_id,
+                    "neutral",
+                    CheckRunOutput(
+                        title="Superseded",
+                        summary="A newer commit arrived; it is being reviewed instead.",
+                    ),
+                )
+                await _save_result(
+                    deps,
+                    run_id,
+                    pr_id,
+                    result,
+                    _Posting(),
+                    status="superseded",
+                    skip_reason="newer_commit",
+                    started=started,
+                )
+                return RunOutcome("superseded", reason="newer_commit")
+
+            if result.files_reviewed == 0 and result.errors and not result.comments:
+                raise _LLMUnavailable("; ".join(result.errors)[:500])
+
+            posting = await _post_review(
+                github,
+                owner,
+                name,
+                pr_number,
+                head_sha,
+                result,
+                post_when_clean=config.post_when_clean,
+                config_warnings=config_warnings,
+            )
+            latency_ms = int((time.monotonic() - started) * 1000)
+            posted = sum(1 for c in result.comments if c.fingerprint in posting.comment_ids)
             await _complete_check(
                 github,
                 owner,
                 name,
                 check_run_id,
-                "neutral",
-                CheckRunOutput(
-                    title="Superseded",
-                    summary="A newer commit arrived; it is being reviewed instead.",
+                review_report.conclusion_for([*result.comments, *result.still_open]),
+                review_report.check_run_output(
+                    result, posted=posted, latency_ms=latency_ms, config_warnings=config_warnings
                 ),
             )
             await _save_result(
-                deps,
-                run_id,
-                pr_id,
-                result,
-                _Posting(),
-                status="superseded",
-                skip_reason="newer_commit",
-                started=started,
+                deps, run_id, pr_id, result, posting, status="completed", started=started
             )
-            return RunOutcome("superseded", reason="newer_commit")
-
-        if result.files_reviewed == 0 and result.errors and not result.comments:
-            raise _LLMUnavailable("; ".join(result.errors)[:500])
-
-        posting = await _post_review(
-            github,
-            owner,
-            name,
-            pr_number,
-            head_sha,
-            result,
-            post_when_clean=config.post_when_clean,
-            config_warnings=config_warnings,
-        )
-        latency_ms = int((time.monotonic() - started) * 1000)
-        posted = sum(1 for c in result.comments if c.fingerprint in posting.comment_ids)
-        await _complete_check(
-            github,
-            owner,
-            name,
-            check_run_id,
-            review_report.conclusion_for([*result.comments, *result.still_open]),
-            review_report.check_run_output(
-                result, posted=posted, latency_ms=latency_ms, config_warnings=config_warnings
-            ),
-        )
-        await _save_result(
-            deps, run_id, pr_id, result, posting, status="completed", started=started
-        )
-        logger.info(
-            "review.completed",
-            comments=len(result.comments),
-            still_open=len(result.still_open),
-            posted=posted,
-            cost_usd=result.cost_usd,
-            latency_ms=latency_ms,
-        )
-        return RunOutcome("completed", posted=posted)
+            logger.info(
+                "review.completed",
+                comments=len(result.comments),
+                still_open=len(result.still_open),
+                posted=posted,
+                cost_usd=result.cost_usd,
+                latency_ms=latency_ms,
+            )
+            return RunOutcome("completed", posted=posted)
 
     except Exception as exc:
         retryable = _retryable(exc)
         if retryable is not None and not final_attempt:
-            # Leave the check run open and the run re-queued; the task retries the whole run.
+            # Leave the check run open and the run re-queued; the job retries the whole run.
             if result is not None:
                 # This attempt's LLM calls were billed even though we'll redo them.
                 async with deps.sessionmaker() as session:
@@ -670,7 +652,7 @@ def _retryable(exc: Exception) -> RetryableReviewError | None:
 
 
 def _error_code(exc: Exception) -> str:
-    if type(exc).__name__ == "SoftTimeLimitExceeded":  # Celery's time limit, without importing it
+    if isinstance(exc, TimeoutError):  # REVIEW_TIME_LIMIT_SECONDS
         return "timeout"
     if isinstance(exc, _LLMUnavailable):
         return "llm_unavailable"

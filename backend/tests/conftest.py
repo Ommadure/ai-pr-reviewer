@@ -11,7 +11,6 @@ TEST_DATABASE_URL = os.environ.setdefault(
     "postgresql+asyncpg://reviewpilot:reviewpilot@localhost:5433/reviewpilot_test",
 )
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
-os.environ.setdefault("REDIS_URL", "redis://localhost:6379/15")
 
 import asyncio
 from collections.abc import AsyncIterator, Iterator
@@ -33,8 +32,7 @@ from app.core.config import Settings, get_settings
 from app.db.base import Base
 from app.db.session import get_session
 from app.main import create_app
-from app.services.dispatch import get_review_dispatcher
-from tests.helpers import TEST_FERNET_KEY, WEBHOOK_SECRET, RecordingDispatcher
+from tests.helpers import TEST_FERNET_KEY, WEBHOOK_SECRET
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 
@@ -126,24 +124,18 @@ async def sessionmaker(migrated_database: str) -> AsyncIterator[async_sessionmak
 
 
 @pytest.fixture
-def dispatcher() -> RecordingDispatcher:
-    return RecordingDispatcher()
-
-
-@pytest.fixture
 async def api(
     app: FastAPI,
     sessionmaker: async_sessionmaker[AsyncSession],
-    dispatcher: RecordingDispatcher,
 ) -> AsyncIterator[httpx.AsyncClient]:
-    """HTTP client for the app wired to the test database and a recording dispatcher."""
+    """HTTP client for the app wired to the test database. No worker runs (the lifespan
+    doesn't start under ASGITransport), so enqueued jobs stay in the jobs table."""
 
     async def test_session() -> AsyncIterator[AsyncSession]:
         async with sessionmaker() as session:
             yield session
 
     app.dependency_overrides[get_session] = test_session
-    app.dependency_overrides[get_review_dispatcher] = lambda: dispatcher
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as test_client:
         yield test_client

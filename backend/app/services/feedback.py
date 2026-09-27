@@ -1,4 +1,4 @@
-"""Collect 👍/👎 reactions on posted review comments (beat: every 30 minutes).
+"""Collect 👍/👎 reactions on posted review comments (a worker timer: every 30 minutes).
 
 GitHub sends no webhook for reactions, so we poll: comments on open PRs, or PRs
 closed within the last 7 days, that weren't checked in the last 30 minutes.

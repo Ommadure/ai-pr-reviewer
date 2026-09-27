@@ -5,7 +5,7 @@ by field (run_id, repo, pr...). Local development uses a coloured console render
 because humans read those logs.
 
 Context is bound once per unit of work, not per logger: a request (request_id,
-delivery_id, repo, pr) or a Celery task (task, run_id, repo, pr). Every line logged
+delivery_id, repo, pr) or a background job (task, job_id, run_id, repo, pr). Every line logged
 underneath, however deep (GitHub client retries, LLM backoff), carries it.
 """
 
@@ -22,7 +22,7 @@ from structlog.typing import EventDict, WrappedLogger
 from app.core.config import AppEnv
 
 # Fields worth searching by; also copied onto Sentry events as tags.
-CONTEXT_KEYS = ("request_id", "delivery_id", "github_event", "task", "run_id", "repo", "pr")
+CONTEXT_KEYS = ("request_id", "delivery_id", "github_event", "task", "job_id", "run_id", "repo", "pr")
 _SAFE_REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 
 

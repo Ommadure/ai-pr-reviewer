@@ -14,7 +14,7 @@ async def _ok() -> None:
 
 
 async def _fail() -> None:
-    raise ConnectionError("redis down")
+    raise ConnectionError("database down")
 
 
 def _override(app: FastAPI, checks: dict[str, ReadinessCheck]) -> None:
@@ -28,21 +28,21 @@ async def test_health_is_always_ok(client: httpx.AsyncClient) -> None:
 
 
 async def test_ready_when_all_dependencies_ok(app: FastAPI, client: httpx.AsyncClient) -> None:
-    _override(app, {"database": _ok, "redis": _ok})
+    _override(app, {"database": _ok})
     response = await client.get("/api/v1/ready")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "checks": {"database": "ok", "redis": "ok"}}
+    assert response.json() == {"status": "ok", "checks": {"database": "ok"}}
 
 
 async def test_not_ready_when_a_dependency_fails(app: FastAPI, client: httpx.AsyncClient) -> None:
-    _override(app, {"database": _ok, "redis": _fail})
+    _override(app, {"database": _fail})
     response = await client.get("/api/v1/ready")
     assert response.status_code == 503
     body = response.json()
     assert body["status"] == "unavailable"
-    assert body["checks"] == {"database": "ok", "redis": "error"}
+    assert body["checks"] == {"database": "error"}
     # Error details are not leaked to unauthenticated callers.
-    assert "redis down" not in response.text
+    assert "database down" not in response.text
 
 
 async def test_each_check_has_its_own_timeout_and_failures_are_logged(
@@ -64,13 +64,13 @@ async def test_each_check_has_its_own_timeout_and_failures_are_logged(
     monkeypatch.setattr(health, "log", recorder)
     monkeypatch.setattr(health, "CHECK_TIMEOUT_SECONDS", 0.01)
     monkeypatch.setattr(health, "CHECK_TIMEOUTS_SECONDS", {"database": 1.0})
-    _override(app, {"database": _slow, "redis": _slow})
+    _override(app, {"database": _slow, "other": _slow})
 
     response = await client.get("/api/v1/ready")
 
-    assert response.json()["checks"] == {"database": "ok", "redis": "error"}
+    assert response.json()["checks"] == {"database": "ok", "other": "error"}
     assert [(event, f["check"], f["error"]) for event, f in recorder.warnings] == [
-        ("ready.check_failed", "redis", "TimeoutError")
+        ("ready.check_failed", "other", "TimeoutError")
     ]
 
 

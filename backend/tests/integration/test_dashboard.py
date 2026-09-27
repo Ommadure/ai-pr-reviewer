@@ -16,7 +16,7 @@ import respx
 from fastapi import FastAPI
 from sqlalchemy import select
 
-from app.api.deps import get_account_services, get_rate_limiter
+from app.api.deps import get_account_services
 from app.core.config import Settings
 from app.core.security import SESSION_COOKIE, STATE_COOKIE, SessionTokens, TokenCipher
 from app.github.client import GITHUB_API_URL
@@ -32,19 +32,10 @@ from app.models import (
     User,
 )
 from app.services.accounts import AccountServices
-from tests.helpers import TEST_FERNET_KEY, RecordingDispatcher
+from tests.helpers import TEST_FERNET_KEY, queued_jobs
 from tests.integration.review_fakes import Sessions
 
 NOW = datetime.now(UTC)
-
-
-class MemoryLimiter:
-    def __init__(self) -> None:
-        self.counts: dict[str, int] = {}
-
-    async def hit(self, key: str, *, limit: int, window_seconds: int) -> bool:
-        self.counts[key] = self.counts.get(key, 0) + 1
-        return self.counts[key] <= limit
 
 
 @pytest.fixture
@@ -212,8 +203,6 @@ async def dash(
         TokenCipher(TEST_FERNET_KEY),
     )
     app.dependency_overrides[get_account_services] = lambda: services
-    limiter = MemoryLimiter()
-    app.dependency_overrides[get_rate_limiter] = lambda: limiter
     yield api
     await web.aclose()
     await gh_api.aclose()
@@ -414,7 +403,6 @@ async def test_every_endpoint_hides_other_tenants(
     settings: Settings,
     world: dict[str, Any],
     sessionmaker: Sessions,
-    dispatcher: RecordingDispatcher,
 ) -> None:
     login_as(dash, settings, world["a"]["user"])
     for method, url, body in _foreign_requests(world["b"]):
@@ -424,7 +412,7 @@ async def test_every_endpoint_hides_other_tenants(
     async with sessionmaker() as session:
         repo_b = await session.get(Repository, world["b"]["repo"])
         assert repo_b is not None and repo_b.enabled is True  # the PATCH changed nothing
-    assert dispatcher.jobs == []  # and no review was queued
+    assert await queued_jobs(sessionmaker, "review") == []  # and no review was queued
 
     # Tenant B sees its own data through the very same endpoints.
     dash.cookies.clear()
@@ -508,13 +496,13 @@ async def test_rereview_queues_a_run_and_is_rate_limited(
     dash: httpx.AsyncClient,
     settings: Settings,
     world: dict[str, Any],
-    dispatcher: RecordingDispatcher,
+    sessionmaker: Sessions,
 ) -> None:
     login_as(dash, settings, world["a"]["user"])
     url = f"/api/v1/pulls/{world['a']['pr']}/rereview"
     statuses = [(await dash.post(url)).status_code for _ in range(6)]
     assert statuses == [202] * 5 + [429]
-    assert len(dispatcher.jobs) == 5
+    assert len(await queued_jobs(sessionmaker, "review")) == 5
     pr = (await dash.get(f"/api/v1/pulls/{world['a']['pr']}")).json()
     assert pr["runs"][0]["trigger"] == "manual" and pr["runs"][0]["status"] == "queued"
 

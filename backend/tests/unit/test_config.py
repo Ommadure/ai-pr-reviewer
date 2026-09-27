@@ -16,8 +16,7 @@ def test_non_test_env_fails_fast_when_required_values_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("DATABASE_URL", raising=False)
-    monkeypatch.delenv("REDIS_URL", raising=False)
-    with pytest.raises(ValidationError, match="DATABASE_URL, REDIS_URL"):
+    with pytest.raises(ValidationError, match="DATABASE_URL, GITHUB_APP_PRIVATE_KEY_B64"):
         Settings(_env_file=None, app_env="development")
 
 
@@ -43,7 +42,6 @@ def _complete_dev_settings(**overrides: object) -> dict[str, object]:
         "_env_file": None,
         "app_env": "development",
         "database_url": "postgresql+asyncpg://u:p@localhost/db",
-        "redis_url": "redis://localhost",
         "github_app_client_id": "Iv23liTestClientId",
         "github_app_client_secret": "client-secret",
         "session_secret": "s" * 32,
@@ -107,7 +105,7 @@ def test_llm_pricing_is_parsed_from_json_env(monkeypatch: pytest.MonkeyPatch) ->
 
 
 def test_review_settings_need_no_server_credentials() -> None:
-    # The CLI/evals run with only an LLM key: no GitHub App, database or Redis.
+    # The CLI/evals run with only an LLM key: no GitHub App or database.
     ReviewSettings(_env_file=None)
 
 

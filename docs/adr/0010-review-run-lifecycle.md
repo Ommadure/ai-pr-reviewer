@@ -1,6 +1,6 @@
 # ADR 0010: Review-run lifecycle and idempotency
 
-- **Status:** Accepted
+- **Status:** Accepted. The Redis lock and Celery redelivery are replaced by the job queue's `lock_key` and orphan requeue ([ADR 0016](0016-postgres-job-queue-in-process-worker.md)); the idempotency rules stand.
 - **Date:** 2026-09-25
 
 ## Context

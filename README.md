@@ -2,7 +2,7 @@
 
 A GitHub App that reviews pull requests with an LLM. When a PR is opened or updated, ReviewPilot reads the diff and posts **one** review with inline comments on the exact changed lines. Each comment is validated against the diff, stripped of anything unsafe, and deduplicated across pushes. A dashboard shows every review's cost, latency and whether people found it useful. An offline eval harness measures precision, recall and fix quality on 31 labelled PRs plus a held-out set, so prompt changes are judged on evidence.
 
-**Stack:** FastAPI · Celery + Redis · PostgreSQL · Gemini (provider-agnostic) · React + TanStack Query · deployed for $0 on an Oracle Cloud VM (Docker + Caddy), Neon, Upstash and Vercel.
+**Stack:** FastAPI · PostgreSQL (also the job queue) · Gemini (provider-agnostic) · React + TanStack Query · deployed for $0 on an Oracle Cloud VM (Docker + Caddy), Neon and Vercel.
 
 ## Demo
 
@@ -50,18 +50,19 @@ flowchart LR
     end
     subgraph VM[Oracle Cloud VM · Docker Compose]
         C[Caddy<br/>HTTPS]
-        API[FastAPI API<br/>webhooks · dashboard API]
-        W[Celery worker<br/>orchestrator + the one beat]
+        subgraph P[one process]
+            API[FastAPI API<br/>webhooks · dashboard API]
+            W[In-process worker<br/>orchestrator · maintenance timers]
+        end
         C --> API
     end
     GH -- signed webhook --> C
     UI -- /api/* rewrite --> C
-    API -- enqueue run_id --> R[(Upstash Redis<br/>broker · locks · caches)]
-    R --> W
+    API -- runs + jobs, one transaction --> PG[(Neon Postgres<br/>data · job queue)]
+    API -- wake --> W
+    PG -- claim SKIP LOCKED --> W
     W -- one COMMENT review --> GH
     W -- structured JSON --> LLM[Gemini]
-    API --> PG[(Neon Postgres)]
-    W --> PG
 ```
 
 ```mermaid
@@ -69,16 +70,14 @@ sequenceDiagram
     participant GH as GitHub
     participant API as API /webhooks/github
     participant DB as Postgres
-    participant Q as Redis
-    participant W as Worker
+    participant W as Worker (same process)
     participant LLM as LLM
     GH->>API: pull_request opened / synchronize (signed)
     API->>API: verify HMAC · dedupe delivery id
-    API->>DB: upsert PR · review_run (queued) · commit
-    API->>Q: review_pull_request(run_id)
+    API->>DB: upsert PR · review_run (queued) · job · commit
+    API->>W: wake
     API-->>GH: 202 in milliseconds
-    Q->>W: task
-    W->>Q: per-PR lock
+    W->>DB: claim the job (SKIP LOCKED, one per PR)
     W->>GH: config from default branch · PR files · check run (in progress)
     W->>LLM: redacted, chunked diff → JSON comments
     W->>W: validate lines · sanitize · dedupe (fingerprints)
@@ -87,8 +86,9 @@ sequenceDiagram
 ```
 
 ## How it works
-- **Webhook ingestion.** Verify the HMAC on the raw body, dedupe by delivery id, record, enqueue, return `202`. Nothing slow happens in the request ([ADR 0002](docs/adr/0002-queue-vs-inline-processing.md)).
-- **Orchestrator.** One Celery task per run holds a per-PR lock, checks the head didn't move, and owns every side effect: GitHub calls, DB writes, the check run ([ADR 0010](docs/adr/0010-review-run-lifecycle.md)).
+- **Webhook ingestion.** Verify the HMAC on the raw body, dedupe by delivery id, then record and enqueue in one transaction and return `202`. Nothing slow happens in the request ([ADR 0002](docs/adr/0002-queue-vs-inline-processing.md)).
+- **Job queue.** A `jobs` table in Postgres, claimed with `FOR UPDATE SKIP LOCKED` by a worker that runs inside the API process. Retries wait in the table, at most one review per PR runs at a time, and an idle worker sends no queries ([ADR 0016](docs/adr/0016-postgres-job-queue-in-process-worker.md)).
+- **Orchestrator.** One job per run checks the head didn't move, and owns every side effect: GitHub calls, DB writes, the check run ([ADR 0010](docs/adr/0010-review-run-lifecycle.md)).
 - **Pure engine.** Filter → redact secrets → prioritise → chunk to a token budget → LLM → validate → rank. No HTTP or DB inside, so the CLI and the eval harness run the exact same code ([ADR 0007](docs/adr/0007-pure-review-engine.md)).
 - **Validation.** A comment survives only if its lines are real added lines in this diff. Output is sanitised (no @mentions, images, HTML or foreign links), and only ever posted as `COMMENT`, never approve or block ([ADR 0006](docs/adr/0006-comment-only-reviews.md)).
 - **Dedupe and incremental reviews.** Fingerprints of path, category and code (not line numbers) stop repeats across pushes. A new push reviews only what changed since the last review, falling back to a full review after a force-push ([ADR 0008](docs/adr/0008-comment-fingerprints.md), [ADR 0011](docs/adr/0011-incremental-reviews.md)).
@@ -115,11 +115,11 @@ The full checklist, with code and test evidence for every item, is in [docs/secu
 ## Deploying
 
 Everything runs on free tiers:
-- **Backend:** one Oracle Cloud Always Free VM running the API, the worker with its one beat, and Caddy for HTTPS (`deploy/oracle/`).
-- **Data:** Neon Postgres and Upstash Redis, both over TLS.
+- **Backend:** one Oracle Cloud Always Free VM running the API (with its in-process worker) and Caddy for HTTPS (`deploy/oracle/`).
+- **Data:** Neon Postgres over TLS; it is also the job queue.
 - **Dashboard:** Vercel (`frontend/vercel.json`).
 
-The step-by-step guide is in [docs/deploy.md](docs/deploy.md). The reasoning is in [ADR 0015](docs/adr/0015-oracle-always-free-vm.md) (the VM) and [ADR 0014](docs/adr/0014-deployment-topology.md) (regions, the measured Redis command budget, the Vercel rewrite). A Render alternative with a paid worker lives in `render.yaml`.
+The step-by-step guide is in [docs/deploy.md](docs/deploy.md). The reasoning is in [ADR 0015](docs/adr/0015-oracle-always-free-vm.md) (the VM) and [ADR 0014](docs/adr/0014-deployment-topology.md) (regions, the Vercel rewrite), and [ADR 0016](docs/adr/0016-postgres-job-queue-in-process-worker.md) (why there is no Redis or Celery).
 
 ## Local setup
 
@@ -127,7 +127,7 @@ Prerequisites: Docker with Compose v2.24+, [uv](https://docs.astral.sh/uv/), and
 
 ```bash
 cp backend/.env.example backend/.env      # fill in GitHub App values (docs/github-app-setup.md)
-docker compose up --build                 # postgres, redis, api, worker, beat, flower
+docker compose up --build                 # postgres, and the api with its worker
 curl localhost:8000/api/v1/ready          # {"status":"ok",...}
 cd frontend && npm install && npm run dev # http://localhost:5173
 ```
@@ -240,7 +240,7 @@ uv run python ../evals/compare.py ../evals/results/A.json ../evals/results/B.jso
   - [0001 Record decisions](docs/adr/0001-record-architecture-decisions.md)
   - [0002 Queue vs inline processing](docs/adr/0002-queue-vs-inline-processing.md)
   - [0003 Gemini first, provider-agnostic LLM](docs/adr/0003-gemini-first-provider-agnostic-llm.md)
-  - [0004 `asyncio.run` inside Celery](docs/adr/0004-asyncio-run-inside-celery.md)
+  - [0004 `asyncio.run` inside Celery](docs/adr/0004-asyncio-run-inside-celery.md) (superseded by 0016)
   - [0005 GitHub App over OAuth App](docs/adr/0005-github-app-over-oauth-app.md)
   - [0006 Comment-only reviews](docs/adr/0006-comment-only-reviews.md)
   - [0007 Pure review engine](docs/adr/0007-pure-review-engine.md)
@@ -252,3 +252,4 @@ uv run python ../evals/compare.py ../evals/results/A.json ../evals/results/B.jso
   - [0013 Eval matching rule](docs/adr/0013-eval-matching-rule.md)
   - [0014 Deployment topology](docs/adr/0014-deployment-topology.md)
   - [0015 Oracle Cloud Always Free VM](docs/adr/0015-oracle-always-free-vm.md)
+  - [0016 Postgres job queue, in-process worker](docs/adr/0016-postgres-job-queue-in-process-worker.md)

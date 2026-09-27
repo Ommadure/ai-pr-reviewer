@@ -6,7 +6,8 @@ Two kinds of credentials:
 2. Installation access token: valid 1 hour, scoped to one installation's repos
    and the App's permissions. Used for every repo API call.
 
-Installation tokens are cached in Redis so each review doesn't mint a new one.
+Installation tokens are cached in memory so each review doesn't mint a new one
+(one long-lived worker process, ADR 0016).
 Reference: https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app
 """
 
@@ -17,7 +18,6 @@ from typing import Protocol
 
 import httpx
 import jwt
-from redis.asyncio import Redis
 
 from app.github.client import GitHubClient
 
@@ -32,19 +32,22 @@ class TokenCache(Protocol):
     async def delete(self, key: str) -> None: ...
 
 
-class RedisTokenCache:
-    def __init__(self, redis: Redis) -> None:
-        self._redis = redis
+class MemoryTokenCache:
+    """Per-process cache. Losing it on restart costs one token request, nothing else."""
+
+    def __init__(self, clock: Callable[[], float] = time.time) -> None:
+        self._clock = clock
+        self._values: dict[str, tuple[str, float]] = {}  # key -> (value, expires at)
 
     async def get(self, key: str) -> str | None:
-        value = await self._redis.get(key)
-        return None if value is None else str(value)
+        value, expires_at = self._values.get(key, ("", 0.0))
+        return value if value and expires_at > self._clock() else None
 
     async def set(self, key: str, value: str, ttl_seconds: int) -> None:
-        await self._redis.set(key, value, ex=ttl_seconds)
+        self._values[key] = (value, self._clock() + ttl_seconds)
 
     async def delete(self, key: str) -> None:
-        await self._redis.delete(key)
+        self._values.pop(key, None)
 
 
 class GitHubAppAuth:

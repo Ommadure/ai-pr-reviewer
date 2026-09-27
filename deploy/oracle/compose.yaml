@@ -1,5 +1,6 @@
-# Production on one VM (ADR 0015, docs/deploy.md): Caddy (HTTPS) → API; worker with the
-# single embedded beat. Postgres is Neon and Redis is Upstash, both external over TLS.
+# Production on one VM (ADR 0015, docs/deploy.md): Caddy (HTTPS) → API. The background
+# worker runs inside the API process, with Postgres (Neon, external over TLS) as its job
+# queue (ADR 0016).
 #
 #   deploy/oracle/deploy.sh      # build + (re)start; links .env -> .env.production
 #
@@ -7,19 +8,17 @@
 
 name: reviewpilot
 
-x-backend: &backend
-  build: ../../backend
-  image: reviewpilot-backend:latest
-  env_file: .env.production
-  restart: unless-stopped
-  logging:
-    driver: json-file
-    options: { max-size: "10m", max-file: "3" } # logs can't fill the disk
-
 services:
   api:
-    <<: *backend
-    # One API container, so migrating on start can't race. Only Caddy can reach it:
+    build: ../../backend
+    image: reviewpilot-backend:latest
+    env_file: .env.production
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" } # logs can't fill the disk
+    # One API container: migrating on start can't race, and the scheduled maintenance
+    # jobs run exactly once (ADR 0016). Only Caddy can reach it:
     # it's on the compose network and never published, so trusting proxy headers is safe.
     command: >-
       sh -c "alembic upgrade head &&
@@ -37,19 +36,7 @@ services:
       timeout: 5s
       retries: 5
       start_period: 60s # migrations run first
-    mem_limit: 384m
-
-  worker:
-    <<: *backend
-    # -B embeds celery beat: this is the ONLY beat. Never run a second worker container
-    # with -B, or every scheduled job runs twice (ADR 0014/0015).
-    command: >-
-      celery -A app.workers.celery_app worker -B -s /tmp/celerybeat-schedule
-      -Q reviews,default,feedback --concurrency 2
-      --without-heartbeat --without-gossip --without-mingle --loglevel INFO
-    depends_on:
-      api:
-        condition: service_healthy # the schema is migrated before any task runs
+    # The API and the worker share this: two reviews with LLM prompts in flight.
     mem_limit: 512m
 
   caddy:
