@@ -48,7 +48,9 @@ This is the checklist from the spec (section 18), reviewed in Phase 7 on 2026-09
 - **API:**
   - no interactive docs in production (`/docs` returns 404);
   - no CORS (same-origin through the Vercel rewrite);
-  - the request id is taken from a header only if it's safe (1–64 characters from `[A-Za-z0-9._-]`), so it can't be used for log injection.
+  - the request id is taken from a header only if it's safe (1–64 characters from `[A-Za-z0-9._-]`), so it can't be used for log injection;
+  - access logs drop query strings (`DropQueryStrings` in `app/core/logging.py`). They used to record the OAuth callback's `code` and `state`. Found on the VM on 2026-09-27; `tests/unit/test_access_log.py`;
+  - public URLs (`APP_BASE_URL`, `FRONTEND_URL`, `OAUTH_CALLBACK_URL`) lose trailing slashes, so a pasted `…/` can't turn the OAuth callback into an unregistered `…//api/…`.
 - **VM** (`deploy/oracle/`):
   - the API container isn't published, so only Caddy can reach it;
   - only ports 22, 80 and 443 are open, in both the cloud Security List and the VM's iptables;
