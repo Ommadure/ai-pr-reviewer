@@ -16,11 +16,15 @@ from app.review.llm.fake import FakeLLMProvider
 from app.review.models import ReviewBudget
 from app.review.pricing import PriceTable
 
+# What the reviewer suggested in production on 2026-09-27: it doesn't close the connection.
+WRONG_SQLITE_FIX = "    with sqlite3.connect(DB_PATH) as conn:"
+
 
 def oracle(
-    cases: list[EvalCase], *, extra_on_clean: bool = False
+    cases: list[EvalCase], *, extra_on_clean: bool = False, wrong_fixes: bool = False
 ) -> Callable[[list[Message]], str]:
-    """A responder that 'finds' each case's planted bugs, and optionally nitpicks clean ones."""
+    """A responder that 'finds' each case's planted bugs, and optionally nitpicks clean
+    ones or suggests the known-wrong fix wherever a bug lists bad_suggestions."""
     by_path = {f.path: c for c in cases for f in c.files}
 
     def respond(messages: list[Message]) -> str:
@@ -35,7 +39,7 @@ def oracle(
                 "category": b.category,
                 "title": b.description[:90],
                 "body": b.description,
-                "suggestion": None,
+                "suggestion": WRONG_SQLITE_FIX if wrong_fixes and b.bad_suggestions else None,
                 "confidence": 0.9,
             }
             for b in case.spec.planted_bugs
@@ -84,7 +88,8 @@ async def test_a_perfect_reviewer_scores_100(cases: list[EvalCase]) -> None:
     result = await run(cases, FakeLLMProvider(responder=oracle(cases)))
     m = result.metrics
     assert (m.precision, m.recall, m.f1) == (1.0, 1.0, 1.0)
-    assert m.tp == m.planted_bugs == 25
+    assert m.tp == m.planted_bugs == 26
+    assert (m.fixes_checked, m.bad_fixes) == (0, 0)  # no suggestions, nothing to judge
     assert m.fp_per_clean_case == 0
     assert m.cases_with_errors == 0
     assert (m.severity_exact, m.severity_within_one) == (1.0, 1.0)  # the oracle copies severity
@@ -97,7 +102,7 @@ async def test_nitpicks_on_clean_cases_cost_precision_not_recall(cases: list[Eva
     assert m.recall == 1.0
     assert m.fp == 5 and m.fp_per_clean_case == 1.0
     assert m.fp_reasons == {"unplanted": 5}
-    assert m.precision == pytest.approx(25 / 30)
+    assert m.precision == pytest.approx(26 / 31)
 
 
 async def test_a_silent_reviewer_scores_zero_recall(cases: list[EvalCase]) -> None:
@@ -109,7 +114,7 @@ async def test_a_silent_reviewer_scores_zero_recall(cases: list[EvalCase]) -> No
 
 
 async def test_llm_failures_are_recorded_per_case(cases: list[EvalCase]) -> None:
-    subset = [c for c in cases if c.id.startswith("py-sql")]
+    subset = [c for c in cases if c.id == "py-sql-injection-01"]
     result = await run(subset, FakeLLMProvider(default="not json at all"))
     assert result.metrics.cases_with_errors == 1
     assert result.cases[0].errors
@@ -125,7 +130,7 @@ async def test_compare_report_shows_deltas_and_changed_cases(cases: list[EvalCas
     a = await run(cases, FakeLLMProvider(responder=oracle(cases, extra_on_clean=True)))
     b = await run(cases, FakeLLMProvider(responder=oracle(cases)))
     report = compare_report(a, b)
-    assert "| Precision | 83% | 100% | +17 pts |" in report
+    assert "| Precision | 84% | 100% | +16 pts |" in report
     assert "`clean-py-async-01` | 0 found, 1 FP | 0 found, 0 FP" in report
     assert compute_metrics(b.cases) == b.metrics  # metrics are recomputable from the cases
 
@@ -167,3 +172,20 @@ async def test_outages_are_retried_so_they_are_not_scored_as_misses(cases: list[
     )
     case = result.cases[0]
     assert (case.attempts, case.errors, len(case.matched)) == (2, [], 1)
+
+
+async def test_a_found_bug_with_a_known_wrong_fix_is_reported(cases: list[EvalCase]) -> None:
+    good = await run(cases, FakeLLMProvider(responder=oracle(cases)))
+    bad = await run(cases, FakeLLMProvider(responder=oracle(cases, wrong_fixes=True)))
+
+    m = bad.metrics
+    assert m.recall == 1.0 and m.precision == 1.0  # finding the bug still counts
+    assert (m.fixes_checked, m.bad_fixes) == (2, 2)
+    report = run_report(bad)
+    assert "| Known-wrong fixes | 2 / 2 |" in report
+    assert "**wrong fix** `py-sqlite-with-leak-01` app/reports/totals.py:7" in report
+    assert "**wrong fix** `py-resource-leak-01`" in report
+
+    comparison = compare_report(good, bad)
+    assert "| Known-wrong fixes | - | 2 / 2 | +2 |" in comparison
+    assert "| `py-sqlite-with-leak-01` | 1 found, 0 FP | 1 found, 0 FP, 1 wrong fix |" in comparison

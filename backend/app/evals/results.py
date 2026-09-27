@@ -18,6 +18,24 @@ from app.evals.matching import CaseMatch, FalsePositiveReason, Prediction
 from app.review.models import SEVERITY_RANK
 
 
+def bad_fixes(case: "CaseResult") -> list[tuple[int, int, str]]:
+    """(prediction, bug, pattern) for each found bug whose suggested fix is known-wrong."""
+    out = []
+    for p, b in case.matched:
+        pattern = case.planted[b].bad_fix(case.predictions[p].suggestion)
+        if pattern is not None:
+            out.append((p, b, pattern))
+    return out
+
+
+def fixes_checked(case: "CaseResult") -> int:
+    return sum(
+        1
+        for p, b in case.matched
+        if case.planted[b].bad_suggestions and case.predictions[p].suggestion
+    )
+
+
 class CaseResult(BaseModel):
     id: str
     kind: Literal["bug", "clean"]
@@ -76,6 +94,10 @@ class Metrics(BaseModel):
     # how often it is at most one level off (critical/high/medium/low/info).
     severity_exact: float | None = None
     severity_within_one: float | None = None
+    # Of the found bugs that have known-wrong fixes (bad_suggestions) and got a
+    # suggestion, how many suggestions were one of those wrong fixes.
+    fixes_checked: int = 0
+    bad_fixes: int = 0
     cost_usd_total: float
     cost_usd_avg: float
     latency_p50_ms: int | None
@@ -172,6 +194,8 @@ def compute_metrics(cases: Sequence[CaseResult]) -> Metrics:
         per_category=dict(sorted(per_category.items())),
         severity_exact=ratio(sum(g == 0 for g in gaps), len(gaps)),
         severity_within_one=ratio(sum(g <= 1 for g in gaps), len(gaps)),
+        fixes_checked=sum(fixes_checked(c) for c in cases),
+        bad_fixes=sum(len(bad_fixes(c)) for c in cases),
         cost_usd_total=cost,
         cost_usd_avg=cost / len(cases) if cases else 0.0,
         latency_p50_ms=percentile(latencies, 50),

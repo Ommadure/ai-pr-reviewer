@@ -1,0 +1,24 @@
+id: py-sqlite-with-leak-01
+language: python
+# Found in production on 2026-09-27: asked to fix a leaked sqlite3 connection, the
+# reviewer suggested `with sqlite3.connect(...) as conn:`. That block only commits or
+# rolls back; it never closes the connection (Python docs, sqlite3 "How to use the
+# connection context manager"). This case is the same misconception from the other
+# side: the code already uses the `with` block, so only a reviewer who knows it
+# doesn't close will flag the leak.
+description: '`with sqlite3.connect()` mistaken for a closing context manager'
+title: Monthly expense totals
+planted_bugs:
+- path: app/reports/totals.py
+  lines:
+  - 7
+  - 7
+  category: bug
+  severity: medium
+  description: '`with sqlite3.connect()` commits or rolls back but never closes: one leaked
+    connection per call'
+  accept_categories:
+  - performance
+  # Still `with sqlite3.connect(` and nothing closes it: the same bug again.
+  bad_suggestions:
+  - '(?s)\A(?!.*(?:\.close\(|closing\())(?=.*\bwith\s+sqlite3\.connect\()'

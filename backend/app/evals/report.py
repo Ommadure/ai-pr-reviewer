@@ -1,6 +1,6 @@
 """Markdown reports: one run, or two runs side by side."""
 
-from app.evals.results import CaseResult, Metrics, RunResult
+from app.evals.results import CaseResult, Metrics, RunResult, bad_fixes
 
 
 def pct(value: float | None) -> str:
@@ -30,6 +30,7 @@ def headline_rows(m: Metrics) -> list[tuple[str, str]]:
         ("Comments per case", f"{m.avg_comments_per_case:.2f}"),
         ("Severity exact", pct(m.severity_exact)),
         ("Severity within 1 level", pct(m.severity_within_one)),
+        ("Known-wrong fixes", f"{m.bad_fixes} / {m.fixes_checked}" if m.fixes_checked else "-"),
         ("Cost per case", usd(m.cost_usd_avg)),
         ("Cost, total", usd(m.cost_usd_total)),
         ("Latency p50", secs(m.latency_p50_ms)),
@@ -108,7 +109,13 @@ def _failures(cases: list[CaseResult]) -> list[str]:
                 f"- **{reason}** `{c.id}` {pred.path}:{pred.line} "
                 f"({pred.severity}, {pred.category}): {pred.title}"
             )
-    return lines or ["Nothing: every planted bug found, no false positives."]
+        for p, b, pattern in bad_fixes(c):
+            pred = c.predictions[p]
+            lines.append(
+                f"- **wrong fix** `{c.id}` {pred.path}:{pred.line}: found "
+                f'"{c.planted[b].description}" but the suggestion matches `{pattern}`'
+            )
+    return lines or ["Nothing: every planted bug found, no false positives, no wrong fixes."]
 
 
 def compare_report(a: RunResult, b: RunResult) -> str:
@@ -151,7 +158,10 @@ def compare_report(a: RunResult, b: RunResult) -> str:
 
 
 def _outcome(case: CaseResult) -> str:
-    return f"{len(case.matched)} found, {len(case.false_positives)} FP"
+    wrong = len(bad_fixes(case))
+    return f"{len(case.matched)} found, {len(case.false_positives)} FP" + (
+        f", {wrong} wrong fix" if wrong else ""
+    )
 
 
 def _deltas(a: Metrics, b: Metrics) -> dict[str, str]:
@@ -170,6 +180,7 @@ def _deltas(a: Metrics, b: Metrics) -> dict[str, str]:
         "Comments per case": change(a.avg_comments_per_case, b.avg_comments_per_case),
         "Severity exact": points(a.severity_exact, b.severity_exact),
         "Severity within 1 level": points(a.severity_within_one, b.severity_within_one),
+        "Known-wrong fixes": change(a.bad_fixes, b.bad_fixes, "{:+.0f}"),
         "Cost per case": change(a.cost_usd_avg, b.cost_usd_avg, "{:+.4f}"),
         "Latency p50": change(
             None if a.latency_p50_ms is None else a.latency_p50_ms / 1000,

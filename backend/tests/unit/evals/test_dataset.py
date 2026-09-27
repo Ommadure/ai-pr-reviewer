@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from app.evals.cli import CASES_DIR
-from app.evals.dataset import CaseError, load_case, load_cases
+from app.evals.dataset import CaseError, PlantedBug, load_case, load_cases
 
 PATCH = """\
 diff --git a/app/x.py b/app/x.py
@@ -29,10 +29,12 @@ def write_case(root: Path, case_id: str, yaml_body: str, patch: str = PATCH) -> 
     return directory
 
 
-def planted(path: str = "app/x.py", lines: str = "[1, 1]", category: str = "bug") -> str:
+def planted(
+    path: str = "app/x.py", lines: str = "[1, 1]", category: str = "bug", extra: str = ""
+) -> str:
     return (
         f"planted_bugs:\n  - {{path: {path}, lines: {lines}, category: {category}, "
-        "severity: medium, description: m}\n"
+        f"severity: medium, description: m{extra}}}\n"
     )
 
 
@@ -67,6 +69,10 @@ def test_case_without_bugs_is_clean(tmp_path: Path) -> None:
             planted(category="vibes"),
             "category",
         ),
+        (
+            planted(extra=", bad_suggestions: ['with (']"),
+            "bad_suggestions pattern",
+        ),
     ],
 )
 def test_bad_cases_fail_loudly(tmp_path: Path, body: str, message: str) -> None:
@@ -95,3 +101,17 @@ def test_the_shipped_dataset_is_valid_and_complete() -> None:
     assert sum(c.kind == "bug" for c in cases) >= 25
     assert sum(c.kind == "clean" for c in cases) >= 5
     assert {c.spec.language for c in cases} >= {"python", "typescript", "javascript", "sql"}
+
+
+def test_bad_fix_names_the_matching_pattern() -> None:
+    bug = PlantedBug(
+        path="a.py",
+        lines=(1, 1),
+        category="bug",
+        severity="medium",
+        description="leak",
+        bad_suggestions=[r"\bwith\s+sqlite3\.connect\(", "never"],
+    )
+    assert bug.bad_fix("with sqlite3.connect(p) as c:") == r"\bwith\s+sqlite3\.connect\("
+    assert bug.bad_fix("with closing(sqlite3.connect(p)) as c:") is None
+    assert bug.bad_fix(None) is None

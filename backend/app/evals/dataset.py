@@ -11,6 +11,8 @@
         severity: high
         description: "SQL injection"
         accept_categories: [bug]        # optional, for genuinely ambiguous bugs
+        bad_suggestions:                # optional regexes: a fix matching one is wrong
+          - 'f"SELECT'
 
 A case with no planted bugs is a *clean* case: every comment on it is a false positive.
 Loading validates each case against its own diff, so a typo in a line number fails
@@ -18,6 +20,7 @@ loudly instead of silently lowering recall.
 """
 
 import fnmatch
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -40,12 +43,27 @@ class PlantedBug(BaseModel):
     severity: Severity
     description: str
     accept_categories: list[Category] = Field(default_factory=list)
+    # Finding a bug and fixing it are separate skills: a comment can name the bug and
+    # still suggest code that doesn't fix it. A `suggestion` matching one of these
+    # regexes is a known-wrong fix (e.g. `with sqlite3.connect(...)`, which never closes).
+    bad_suggestions: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _ordered(self) -> "PlantedBug":
         if self.lines[0] > self.lines[1]:
             raise ValueError(f"lines {list(self.lines)} must be [start, end] with start <= end")
+        for pattern in self.bad_suggestions:
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                raise ValueError(f"bad_suggestions pattern {pattern!r}: {exc}") from exc
         return self
+
+    def bad_fix(self, suggestion: str | None) -> str | None:
+        """The first bad_suggestions pattern the suggested code matches, if any."""
+        if not suggestion:
+            return None
+        return next((p for p in self.bad_suggestions if re.search(p, suggestion)), None)
 
     @property
     def start(self) -> int:
