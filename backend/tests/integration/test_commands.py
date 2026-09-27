@@ -60,6 +60,46 @@ async def test_review_command_queues_a_full_review(
     assert github.replies == ["🔍 Starting a full review of `aaaaaaa`."]
 
 
+@pytest.mark.parametrize(
+    ("merged", "message"),
+    [
+        (True, "This PR is already merged, so there's nothing left to review."),
+        (False, "This PR is closed. Reopen it, then run `/reviewpilot review` again."),
+    ],
+)
+async def test_review_command_on_a_closed_pr_says_so_and_queues_nothing(
+    deps: CommandDeps,
+    github: FakeGitHub,
+    run_id: int,
+    enqueued: list[int],
+    sessionmaker: Sessions,
+    merged: bool,
+    message: str,
+) -> None:
+    github.pr |= {"state": "closed", "merged": merged}
+
+    assert await handle_command(deps, _job("review")) == "pr_closed"
+    assert github.replies == [message]
+    assert enqueued == [] and len(await all_rows(sessionmaker, ReviewRun)) == 1
+    assert deps.rate_limiter.counts == {}  # type: ignore[attr-defined]  # quota untouched
+    [pr] = await all_rows(sessionmaker, PullRequest)
+    assert pr.state == ("merged" if merged else "closed")  # our copy is refreshed too
+
+
+async def test_review_command_uses_the_live_pr_not_our_copy(
+    deps: CommandDeps, github: FakeGitHub, run_id: int, enqueued: list[int], sessionmaker: Sessions
+) -> None:
+    # A missed webhook left us thinking the PR is merged, on an old head.
+    async with sessionmaker() as session:
+        await session.execute(update(PullRequest).values(state="merged", head_sha="b" * 40))
+        await session.commit()
+
+    assert await handle_command(deps, _job("review")) == "review_queued"
+    [pr] = await all_rows(sessionmaker, PullRequest)
+    assert (pr.state, pr.head_sha) == ("open", "a" * 40)
+    assert (await all_rows(sessionmaker, ReviewRun))[-1].head_sha == "a" * 40
+
+
 async def test_privileged_commands_need_write_access(
     deps: CommandDeps, github: FakeGitHub, run_id: int, enqueued: list[int]
 ) -> None:

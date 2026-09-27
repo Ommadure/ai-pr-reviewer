@@ -225,6 +225,23 @@ async def test_drafts_are_skipped_unless_configured(
         make_deps(sessionmaker, github_auth, review_responder([])), run_id
     )
     assert (outcome.status, outcome.reason) == ("skipped", "draft")
+    assert github.replies == []  # an automatic run skips quietly: nobody is waiting on it
+
+
+async def test_a_requested_review_that_is_skipped_says_why(
+    sessionmaker: Sessions, github_auth: GitHubAppAuth, github: FakeGitHub, run_id: int
+) -> None:
+    # `/reviewpilot review` already replied "Starting": a silent skip would look like a hang.
+    async with sessionmaker() as session:
+        await session.execute(update(ReviewRun).values(trigger="command"))
+        await session.commit()
+    github.pr["draft"] = True
+    outcome = await execute_review_run(
+        make_deps(sessionmaker, github_auth, review_responder([])), run_id
+    )
+    assert (outcome.status, outcome.reason) == ("skipped", "draft")
+    [reply] = github.replies
+    assert reply.startswith(f"⏭️ Skipped the review of `{HEAD[:7]}`: this PR is a draft")
 
 
 async def test_llm_outage_fails_the_run_without_blocking_the_merge(

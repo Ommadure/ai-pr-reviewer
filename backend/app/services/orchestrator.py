@@ -106,6 +106,27 @@ class ReviewDeps:
     prompt_version: str = DEFAULT_PROMPT_VERSION
 
 
+# Replies for a review someone asked for with `/reviewpilot review` that the worker then
+# skipped: the command already said "Starting", so silence would look like a hang.
+COMMAND_SKIP_REPLIES = {
+    "pr_closed": "⏭️ Skipped the review of `{sha}`: this PR was closed before it started.",
+    "newer_commit": (
+        "⏭️ Skipped the review of `{sha}`: a newer commit was pushed before it started. "
+        "Run `/reviewpilot review` again to review the latest one."
+    ),
+    "draft": (
+        "⏭️ Skipped the review of `{sha}`: this PR is a draft, and this repository doesn't "
+        "review drafts (`review_drafts` in `.reviewpilot.yml`). Mark it ready for review, "
+        "then run `/reviewpilot review` again."
+    ),
+    "disabled_in_config": (
+        "⏭️ Skipped the review of `{sha}`: ReviewPilot is turned off for this repository "
+        "(`enabled: false` in `.reviewpilot.yml` on the default branch)."
+    ),
+    "no_new_changes": "⏭️ Nothing new to review in `{sha}` since the last review.",
+}
+
+
 @dataclass(frozen=True)
 class RunOutcome:
     status: str  # completed | skipped | superseded | failed | missing | <already-final status>
@@ -158,6 +179,7 @@ async def _execute_locked(deps: ReviewDeps, run_id: int, *, final_attempt: bool)
         default_branch = repository.default_branch or pr.base_ref
         existing_check_run = run.check_run_id
         requested_mode, last_reviewed = run.mode, pr.last_reviewed_sha
+        requested_by_command = run.trigger == "command"
 
     owner, name = repository.owner_and_name
     github = deps.github_auth.installation_client(installation_id)
@@ -168,20 +190,30 @@ async def _execute_locked(deps: ReviewDeps, run_id: int, *, final_attempt: bool)
     check_run_id = existing_check_run
     result: ReviewResult | None = None
 
+    async def skip(status: str, reason: str) -> RunOutcome:
+        outcome = await _finish_by_id(deps, run_id, status, reason)
+        # Someone asked for this review and was told it's starting: say why it isn't.
+        if requested_by_command and reason in COMMAND_SKIP_REPLIES:
+            with suppress(GitHubError):
+                await github.create_issue_comment(
+                    owner, name, pr_number, COMMAND_SKIP_REPLIES[reason].format(sha=head_sha[:7])
+                )
+        return outcome
+
     try:
         loaded = await load_repo_config(deps.sessionmaker, github, repository, default_branch)
         config = loaded.config
         config_warnings = loaded.parsed.errors + loaded.parsed.warnings
         if not config.enabled:
-            return await _finish_by_id(deps, run_id, "skipped", "disabled_in_config")
+            return await skip("skipped", "disabled_in_config")
 
         live = await github.get_pull_request(owner, name, pr_number)
         if live.state != "open":
-            return await _finish_by_id(deps, run_id, "skipped", "pr_closed")
+            return await skip("skipped", "pr_closed")
         if live.head_sha != head_sha:
-            return await _finish_by_id(deps, run_id, "superseded", "newer_commit")
+            return await skip("superseded", "newer_commit")
         if live.draft and not config.review_drafts:
-            return await _finish_by_id(deps, run_id, "skipped", "draft")
+            return await skip("skipped", "draft")
 
         pr_files = _to_file_diffs(await github.list_pull_request_files(owner, name, pr_number))
         plan = await _plan_diff(
@@ -196,7 +228,7 @@ async def _execute_locked(deps: ReviewDeps, run_id: int, *, final_attempt: bool)
             head_sha=head_sha,
         )
         if plan.nothing_new:
-            return await _finish_by_id(deps, run_id, "skipped", "no_new_changes")
+            return await skip("skipped", "no_new_changes")
         await _update_run(
             deps, run_id, mode=plan.mode, mode_reason=plan.mode_reason, from_sha=plan.from_sha
         )

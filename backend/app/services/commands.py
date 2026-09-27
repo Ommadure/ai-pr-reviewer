@@ -119,9 +119,23 @@ async def handle_command(deps: CommandDeps, job: CommandJob) -> str:
             )
             return "forbidden"
 
-    pr = await _ensure_pull_request(deps, github, job)
+    # A review needs the live PR: our copy can be stale (a missed webhook), and replying
+    # "Starting a full review" on a merged PR, then silently skipping it, misleads.
+    # Checked before the rate limit, so a mistaken command doesn't use up the quota.
+    pr = await (
+        _fetch_pull_request(deps, github, job)
+        if job.command == "review"
+        else _ensure_pull_request(deps, github, job)
+    )
     match job.command:
         case "review":
+            if pr.state != "open":
+                await reply(
+                    "This PR is already merged, so there's nothing left to review."
+                    if pr.state == "merged"
+                    else "This PR is closed. Reopen it, then run `/reviewpilot review` again."
+                )
+                return "pr_closed"
             allowed = await deps.rate_limiter.hit(
                 manual_review_key(pr.id), limit=MANUAL_REVIEWS_PER_HOUR, window_seconds=3600
             )
@@ -172,10 +186,16 @@ async def _ensure_pull_request(
     """We may not have seen this PR yet (e.g. the App was installed after it opened)."""
     async with deps.sessionmaker() as session:
         pr = await pull_requests.get_by_number(session, job.repository_id, job.pr_number)
-        if pr is not None:
-            return pr
-        owner, name = job.repo_full_name.split("/", 1)
-        raw = (await github.request("GET", f"/repos/{owner}/{name}/pulls/{job.pr_number}")).json()
+    return pr if pr is not None else await _fetch_pull_request(deps, github, job)
+
+
+async def _fetch_pull_request(
+    deps: CommandDeps, github: GitHubClient, job: CommandJob
+) -> PullRequest:
+    """The PR as GitHub has it now (state, head), saved over our copy."""
+    owner, name = job.repo_full_name.split("/", 1)
+    raw = (await github.request("GET", f"/repos/{owner}/{name}/pulls/{job.pr_number}")).json()
+    async with deps.sessionmaker() as session:
         pr = await pull_requests.upsert_from_payload(
             session, repository_id=job.repository_id, payload=events.PullRequest.model_validate(raw)
         )
