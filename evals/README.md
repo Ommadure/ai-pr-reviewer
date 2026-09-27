@@ -6,6 +6,7 @@ Measures the review engine on pull requests with **planted bugs**. It reports ho
 - **26 bug cases** and **5 clean cases**, in Python, TypeScript/TSX, JavaScript and SQL.
 - **Bugs covered:** SQL injection, missing `await` (Python and TS), off-by-one (Python and JS), a hardcoded production credential, an N+1 query, an unhandled promise rejection, a mutable default argument, a check-then-act race, missing input validation, a resource leak, a swallowed exception, XSS via `dangerouslySetInnerHTML`, a stale React hook dependency, money rounding, `is` vs `==`, an `UPDATE` without `WHERE`, a `NOT NULL` column with no default, an inverted expiry check, numeric `sort()`, path traversal, `forEach(async …)`, floor division, command injection, and `with sqlite3.connect()` mistaken for a closing context manager (found in production).
 - **Clean cases** are well-written changes with nothing to flag. Any comment on them is a false positive.
+- **Held-out set (`heldout/`):** cases kept out of prompt tuning, to check that a prompt change learned a rule rather than memorised the example that motivated it. Run with `--cases-dir ../evals/heldout`. Don't tune a prompt against these; add new held-out cases when you use them up.
 
 Each case is `cases/<id>/diff.patch` (a unified diff) plus `cases/<id>/case.yaml`:
 

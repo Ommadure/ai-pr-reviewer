@@ -115,3 +115,9 @@ def test_bad_fix_names_the_matching_pattern() -> None:
     assert bug.bad_fix("with sqlite3.connect(p) as c:") == r"\bwith\s+sqlite3\.connect\("
     assert bug.bad_fix("with closing(sqlite3.connect(p)) as c:") is None
     assert bug.bad_fix(None) is None
+
+
+def test_the_held_out_set_is_valid() -> None:
+    # evals/heldout: cases kept out of prompt tuning, run with --cases-dir.
+    cases = load_cases(CASES_DIR.parent / "heldout")
+    assert {c.kind for c in cases} == {"bug", "clean"}

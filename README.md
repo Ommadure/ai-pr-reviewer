@@ -184,19 +184,21 @@ A comment with mixed reactions counts in both, so the two rates don't add up to 
 
 ## Evaluation
 
-An offline harness measures the review engine on 30 pull requests (25 with planted bugs, 5 clean) in Python, TypeScript, JavaScript and SQL. It reports precision, recall, F1, severity agreement, cost and latency. The full runs, what changed between prompt versions, and the reasoning are in [evals/RESULTS.md](evals/RESULTS.md). How to run it is in [evals/README.md](evals/README.md).
+An offline harness measures the review engine on 31 pull requests (26 with planted bugs, 5 clean) in Python, TypeScript, JavaScript and SQL, plus a small held-out set. It reports precision, recall, F1, severity agreement, known-wrong suggested fixes, cost and latency. The full runs, what changed between prompt versions, and the reasoning are in [evals/RESULTS.md](evals/RESULTS.md). How to run it is in [evals/README.md](evals/README.md).
 
-| Prompt · model | Precision | Recall | F1 | FP per clean PR | Severity exact | p50 latency |
+Current dataset (26 bugs + 5 clean), two runs each:
+
+| Prompt · model | Precision | Recall | FP per clean PR | Severity exact | Known-wrong fixes | p50 latency |
 | --- | --- | --- | --- | --- | --- | --- |
-| v1 · gemini-3.5-flash-lite | 96% | 96% | 96% | 0.0 | 62–71% | 1.7 s |
-| **v3 · gemini-3.5-flash-lite (shipped)** | 96% | 96% | 96% | 0.0 | 75% | 1.9 s |
-| v3 · gemini-3.1-flash-lite | 89% | 100% | 94% | 0.4 | 60% | 5.9 s |
+| v3 · gemini-3.5-flash-lite | 96% | 92% | 0.0 | 71–79% | 1 per run | 1.9 s |
+| **v4 · gemini-3.5-flash-lite (shipped)** | 100% | 96–100% | 0.0 | 81–84% | 0 | 1.9 s |
 
-Every run cost $0 on the free tier. The dataset is at its ceiling for detection, so the prompt changes mainly improved severity and category calibration.
+v4 exists because of a production review: the reviewer "fixed" a leaked SQLite connection with `with sqlite3.connect(...)`, which never closes it. The harness now scores suggested fixes as well as findings, and v4 closes that gap, including on a held-out `psycopg2` case the prompt never mentions. The trade-off: v4 offers fewer one-click suggestions (about 37% of found bugs, against 52%). Every run cost $0 on the free tier. Earlier prompt versions on the Phase 6 dataset are in RESULTS.md.
 
 ```bash
 cd backend
-uv run python ../evals/run_eval.py --prompt v3 --model gemini-3.5-flash-lite --pause 4 --retry-errors 2
+uv run python ../evals/run_eval.py --prompt v4 --model gemini-3.5-flash-lite --pause 4 --retry-errors 2
+uv run python ../evals/run_eval.py --prompt v4 --cases-dir ../evals/heldout
 uv run python ../evals/compare.py ../evals/results/A.json ../evals/results/B.json
 ```
 

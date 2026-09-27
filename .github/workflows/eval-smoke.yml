@@ -8,7 +8,7 @@ on:
     inputs:
       prompt:
         description: "Prompt version (e.g. v1, v2)"
-        default: "v2"
+        default: "v4"
         required: true
       cases:
         description: "Glob over case ids"
