@@ -230,6 +230,10 @@ class ReviewResult:
     files_total: int
     files_reviewed: int
     errors: list[str] = field(default_factory=list)
+    # Re-found in this run, but already posted on the same, unchanged code (same
+    # fingerprint): not posted again, yet still present, so they still count for the
+    # check's title and conclusion and the summary's risk.
+    still_open: list[ReviewComment] = field(default_factory=list)
 
     @property
     def input_tokens(self) -> int:
