@@ -3,8 +3,8 @@
 Measures the review engine on pull requests with **planted bugs**. It reports how many bugs it finds (recall), how many of its comments are real (precision), what that costs, and how long it takes. It calls the pure engine directly: no GitHub, no database.
 
 ## Dataset (`cases/`)
-- **25 bug cases** and **5 clean cases**, in Python, TypeScript/TSX, JavaScript and SQL.
-- **Bugs covered:** SQL injection, missing `await` (Python and TS), off-by-one (Python and JS), a hardcoded production credential, an N+1 query, an unhandled promise rejection, a mutable default argument, a check-then-act race, missing input validation, a resource leak, a swallowed exception, XSS via `dangerouslySetInnerHTML`, a stale React hook dependency, money rounding, `is` vs `==`, an `UPDATE` without `WHERE`, a `NOT NULL` column with no default, an inverted expiry check, numeric `sort()`, path traversal, `forEach(async …)`, floor division and command injection.
+- **26 bug cases** and **5 clean cases**, in Python, TypeScript/TSX, JavaScript and SQL.
+- **Bugs covered:** SQL injection, missing `await` (Python and TS), off-by-one (Python and JS), a hardcoded production credential, an N+1 query, an unhandled promise rejection, a mutable default argument, a check-then-act race, missing input validation, a resource leak, a swallowed exception, XSS via `dangerouslySetInnerHTML`, a stale React hook dependency, money rounding, `is` vs `==`, an `UPDATE` without `WHERE`, a `NOT NULL` column with no default, an inverted expiry check, numeric `sort()`, path traversal, `forEach(async …)`, floor division, command injection, and `with sqlite3.connect()` mistaken for a closing context manager (found in production).
 - **Clean cases** are well-written changes with nothing to flag. Any comment on them is a false positive.
 
 Each case is `cases/<id>/diff.patch` (a unified diff) plus `cases/<id>/case.yaml`:
@@ -21,9 +21,10 @@ planted_bugs:
     severity: critical
     description: "SQL injection: search term interpolated into the query"
     accept_categories: []           # optional, only for genuinely ambiguous bugs
+    bad_suggestions: []             # optional regexes: a suggested fix matching one is wrong
 ```
 
-Loading checks every planted bug against the diff, so a line number that isn't an added line fails loudly.
+Loading checks every planted bug against the diff, so a line number that isn't an added line fails loudly. It also compiles every `bad_suggestions` pattern, so a broken regex fails loudly too.
 
 ## Matching rule ([ADR 0013](../docs/adr/0013-eval-matching-rule.md))
 A comment finds a planted bug when all three hold:
@@ -32,6 +33,8 @@ A comment finds a planted bug when all three hold:
 - its category is compatible. `bug` and `error_handling` count as the same, plus any per-case `accept_categories`.
 
 Matching is one-to-one. Every other comment is a false positive: a `duplicate`, a `wrong_category`, or `unplanted`.
+
+**Finding a bug isn't fixing it.** When a found bug lists `bad_suggestions` and its comment carries a `suggestion` block, the report checks the suggested code against those patterns. A match is a **known-wrong fix**. It still counts as found (detection and fix quality are separate metrics), and the report lists it under "What went wrong". Example: `py-resource-leak-01` flags `with sqlite3.connect(...)` without a `close()`, which leaks the connection it claims to fix.
 
 ## Running it
 Run from `backend/`, so the LLM settings load from `backend/.env`:

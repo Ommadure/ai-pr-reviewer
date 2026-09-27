@@ -39,6 +39,7 @@ class Prediction:
     severity: str
     title: str
     source: str = "llm"
+    suggestion: str | None = None  # the ```suggestion block, scored by bad_suggestions
 
     @classmethod
     def from_comment(cls, comment: ReviewComment) -> "Prediction":
@@ -50,6 +51,7 @@ class Prediction:
             severity=comment.severity,
             title=comment.title,
             source=comment.source,
+            suggestion=comment.suggestion,
         )
 
 

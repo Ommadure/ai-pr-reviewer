@@ -12,3 +12,7 @@ planted_bugs:
   description: 'Connection is never closed: one leaked handle per audited request'
   accept_categories:
   - performance
+  # Production, 2026-09-27: the reviewer "fixed" this leak with `with sqlite3.connect(...)`,
+  # which never closes the connection (see py-sqlite-with-leak-01).
+  bad_suggestions:
+  - '(?s)\A(?!.*(?:\.close\(|closing\())(?=.*\bwith\s+sqlite3\.connect\()'

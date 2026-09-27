@@ -48,6 +48,24 @@ uv run python ../evals/run_eval.py --prompt v3 --model gemini-3.5-flash --pause 
 
 If you want to switch, change `LLM_MODEL` in `backend/.env`. I didn't edit it, because that file holds your secrets.
 
+## Known failure: `sqlite3`'s context manager (2026-09-27)
+Found in production, on the first real review (reviewpilot-playground PR #4). The reviewer flagged a leaked SQLite connection, and suggested `with sqlite3.connect(...) as conn:` as the fix. That block commits or rolls back but **never closes** the connection. It's now two cases (ADR 0013, amendment):
+- **`py-resource-leak-01`** gained `bad_suggestions`, so the wrong fix is scored;
+- **`py-sqlite-with-leak-01`** is new: the code already uses the `with` block and still leaks.
+
+Prompt v3 on gemini-3.5-flash-lite, 3 runs of just these two cases:
+
+| | Run 1 | Run 2 | Run 3 |
+| --- | --- | --- | --- |
+| `py-resource-leak-01` | found, **wrong fix** | found, **wrong fix** | found, **wrong fix** |
+| `py-sqlite-with-leak-01` | **missed** | **missed** | **missed** |
+
+It happens every time, so it's a real blind spot, not noise. It's the first case v3 reliably fails, which gives a future prompt version something concrete to beat. The full-dataset rows above predate both changes. To reproduce:
+
+```bash
+uv run python ../evals/run_eval.py --prompt v3 --model gemini-3.5-flash-lite --cases 'py-*leak*'
+```
+
 ## How to read these numbers (honestly)
 - **The dataset is at its ceiling for detection.** Every configuration found at least 24 of 25 bugs, so precision and recall barely separate prompts here. The differences show up in severity, category and false-positive quality. The next step is a harder tier: longer diffs with distracting but correct code, and several bugs per case.
 - **Noise is about ±5 points on severity agreement.** The two v1 runs differ by 9 points. v3's severity gain is directional, not proven.

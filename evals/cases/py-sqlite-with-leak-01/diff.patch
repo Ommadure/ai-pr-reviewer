@@ -1,0 +1,14 @@
+diff --git a/app/reports/totals.py b/app/reports/totals.py
+--- a/app/reports/totals.py
++++ b/app/reports/totals.py
+@@ -1,3 +1,10 @@
+ import sqlite3
+ 
+ DB_PATH = "/var/lib/app/reports.db"
++
++
++def monthly_totals(month: str) -> list[tuple[str, int]]:
++    with sqlite3.connect(DB_PATH) as conn:
++        return conn.execute(
++            "SELECT team, SUM(amount) FROM expenses WHERE month = ? GROUP BY team", (month,)
++        ).fetchall()

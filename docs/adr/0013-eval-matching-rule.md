@@ -36,3 +36,17 @@ Prompt and model changes have to be judged on evidence, not on a few hand-picked
 - **Precision is conservative.** A real issue that wasn't planted counts as a false positive. The report lists each false positive with its reason, so a human can see when the model was right and the dataset incomplete. If that keeps happening, the right fix is to add the bug to the case, not to loosen the rule.
 - **Small dataset, rough numbers.** With 25 bugs, one bug is worth 4 recall points, so differences of a point or two between runs are noise. Temperature is 0.1, not 0, and providers aren't fully deterministic, so a conclusion should rest on repeated or large differences.
 - **Evals find engine bugs too.** The first run showed that `prompt_builder.fill()` crashed on any diff containing `{{` (JSX `style={{…}}`). It now fills placeholders in one pass over the template, and never re-scans inserted text.
+
+## Amendment (2026-09-27): known-wrong fixes
+**Context.** In production, the reviewer correctly flagged a leaked SQLite connection, then suggested `with sqlite3.connect(...) as conn:`. That block only commits or rolls back; it never closes the connection, so the suggested fix still leaks. The matching rule scored the comment as a perfect hit, because it looks only at path, line and category, never at the suggestion. A one-click `suggestion` that is wrong is worse than no suggestion, because it looks authoritative.
+
+**Decision.**
+- A planted bug may list **`bad_suggestions`**: regexes over the suggested code that mark a known-wrong fix. They're compiled at load time, so a broken pattern fails loudly.
+- For each *matched* comment with a `suggestion`, the harness reports whether it's a known-wrong fix. The metrics add `fixes_checked` and `bad_fixes`, and the report adds "Known-wrong fixes" and a **wrong fix** line per case.
+- **Detection metrics are unchanged.** A wrong fix still found the bug, and mixing the two would hide which skill regressed.
+- Patterns describe the *wrong* fix, not the right one, because there are many correct fixes (`contextlib.closing`, `try/finally`, an explicit `close()`) and one well-known wrong one.
+
+**Consequences.**
+- This is a denylist. It catches known mistakes, not every bad fix, so a clean result means "none of the known-wrong fixes", not "the fix is correct". Proving a fix correct would mean running it, which is out of scope.
+- Older result files have no suggestions recorded. They load unchanged, and show "-" for the new metric.
+- New case `py-sqlite-with-leak-01` tests the same misconception from the detection side: the code already uses the `with` block, so only a reviewer who knows it doesn't close will flag the leak.
