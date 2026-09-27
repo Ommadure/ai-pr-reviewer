@@ -10,3 +10,7 @@ planted_bugs:
   category: security
   severity: critical
   description: 'SQL injection: search term interpolated into the query'
+  # A suggestion that still contains the bug is a wrong fix (ADR 0013, amendment).
+  bad_suggestions:
+  - "(?i)\\bf([\"'])[^\"'\\n]*\\b(select|where|ilike)\\b"
+  - "(?is)\\b(select|where)\\b[^\\n]*[\"']\\s*(\\.format\\(|%\\s*[(\\w])"

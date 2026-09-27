@@ -35,7 +35,9 @@ A comment finds a planted bug when all three hold:
 
 Matching is one-to-one. Every other comment is a false positive: a `duplicate`, a `wrong_category`, or `unplanted`.
 
-**Finding a bug isn't fixing it.** When a found bug lists `bad_suggestions` and its comment carries a `suggestion` block, the report checks the suggested code against those patterns. A match is a **known-wrong fix**. It still counts as found (detection and fix quality are separate metrics), and the report lists it under "What went wrong". Example: `py-resource-leak-01` flags `with sqlite3.connect(...)` without a `close()`, which leaks the connection it claims to fix.
+**Finding a bug isn't fixing it.** When a found bug lists `bad_suggestions` and its comment carries a `suggestion` block, the report checks the suggested code against those patterns. A match is a **known-wrong fix**. It still counts as found (detection and fix quality are separate metrics), and the report lists it under "What went wrong".
+
+**Fixes that fit.** The engine drops a suggestion that wouldn't apply cleanly: one that repeats code outside its lines, silently deletes a line, changes the bracket structure, or contains copied diff markers. The report shows **Fixes offered on found bugs** (the one-click fixes users actually get) and **Unusable suggestions** (the ones the model wrote that had to be dropped). Example: `py-resource-leak-01` flags `with sqlite3.connect(...)` without a `close()`, which leaks the connection it claims to fix.
 
 ## Running it
 Run from `backend/`, so the LLM settings load from `backend/.env`:

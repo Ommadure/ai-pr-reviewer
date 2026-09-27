@@ -10,3 +10,6 @@ planted_bugs:
   category: security
   severity: critical
   description: 'XSS: user-written comment body injected as HTML'
+  # A suggestion that still contains the bug is a wrong fix (ADR 0013, amendment).
+  bad_suggestions:
+  - "(?s)\\A(?!.*(sanitize|DOMPurify)).*dangerouslySetInnerHTML"

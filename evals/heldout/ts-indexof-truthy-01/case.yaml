@@ -1,0 +1,16 @@
+id: ts-indexof-truthy-01
+language: typescript
+# Held out from prompt v5: a one-line logic fix (`includes`) that v5's list of common
+# local fixes doesn't mention. indexOf is -1 (truthy) when absent and 0 (falsy) when first.
+description: indexOf result used as a boolean
+title: Admin check helper
+planted_bugs:
+- path: src/auth/roles.ts
+  lines: [6, 6]
+  category: bug
+  severity: high
+  description: 'indexOf returns -1 (truthy) when the role is missing and 0 (falsy) when it is first: the check is inverted for most users'
+  accept_categories: [security]
+  bad_suggestions:
+  # Still uses indexOf as a boolean.
+  - "if\\s*\\(\\s*!?\\s*[\\w.]+\\.indexOf\\([^)]*\\)\\s*\\)"

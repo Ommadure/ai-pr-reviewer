@@ -1,0 +1,16 @@
+id: py-yaml-load-01
+language: python
+# Held out from prompt v5: a one-line security fix (yaml.safe_load) that v5's list of
+# common local fixes doesn't mention. Measures whether v5 suggests local fixes in general.
+description: Uploaded YAML parsed with the full (unsafe) loader
+title: Parse uploaded manifests
+planted_bugs:
+- path: app/imports/manifest.py
+  lines: [7, 7]
+  category: security
+  severity: critical
+  description: 'yaml.Loader constructs arbitrary Python objects: an uploaded manifest can run code'
+  bad_suggestions:
+  # Still the full or unsafe loader.
+  - "yaml\\.(load|load_all)\\((?![^)]*SafeLoader)[^)]*\\)"
+  - "yaml\\.(unsafe_load|full_load)\\("

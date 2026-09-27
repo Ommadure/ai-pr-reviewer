@@ -10,3 +10,6 @@ planted_bugs:
   category: bug
   severity: medium
   description: 'Default sort is lexicographic: [100, 25, 9] sorts wrong'
+  # A suggestion that still contains the bug is a wrong fix (ADR 0013, amendment).
+  bad_suggestions:
+  - "\\.sort\\(\\s*\\)"

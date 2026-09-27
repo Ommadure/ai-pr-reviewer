@@ -10,3 +10,6 @@ planted_bugs:
   category: security
   severity: critical
   description: 'Path traversal: ../ in filename reads any file on the server'
+  # A suggestion that still contains the bug is a wrong fix (ADR 0013, amendment).
+  bad_suggestions:
+  - "(?s)\\A(?!.*(realpath|resolve|abspath|commonpath|is_relative_to|basename|normpath)).*os\\.path\\.join\\(UPLOAD_DIR,\\s*filename\\)"

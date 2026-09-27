@@ -1,0 +1,12 @@
+diff --git a/app/imports/manifest.py b/app/imports/manifest.py
+--- a/app/imports/manifest.py
++++ b/app/imports/manifest.py
+@@ -1,3 +1,8 @@
+ import yaml
+ 
+ from app.imports.models import Manifest
++
++
++def parse_manifest(uploaded: bytes) -> Manifest:
++    data = yaml.load(uploaded, Loader=yaml.Loader)
++    return Manifest(**data)

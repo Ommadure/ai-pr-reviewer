@@ -97,7 +97,7 @@ p50 latency was 1.9 s for both, and cost was $0 (free tier).
 - **The target cases were written from this very failure,** and the held-out control was seen by one draft. The psycopg2 bug case was never in the prompt, and that is the real evidence v4 learned the rule and not just the example.
 
 ## What we shipped, and why
-**Prompt v4 is now the default** (`DEFAULT_PROMPT_VERSION = "v4"`, 2026-09-27). Across both runs it matched or beat v3 on every detection metric: 25–26/26 found against 24/26, no false positives on the dataset against 1, and severity-exact 81–84% against 71–79%. It also posted **no known-wrong fixes**. The costs are listed above. v3 shipped after the Phase 6 eval, for the reasons below.
+**Prompt v4 is now the default** (`DEFAULT_PROMPT_VERSION = "v4"`, 2026-09-27). It stayed the default after the v5 experiment below. Across both runs it matched or beat v3 on every detection metric: 25–26/26 found against 24/26, no false positives on the dataset against 1, and severity-exact 81–84% against 71–79%. It also posted **no known-wrong fixes**. The costs are listed above. v3 shipped after the Phase 6 eval, for the reasons below.
 
 **Prompt v3** (2026-09-25):
 - **Why it won then:** it matched v1 and v2 on detection (24/25, no false positives on clean code), had the best severity agreement, and guards against a known hallucination class.
@@ -108,6 +108,52 @@ p50 latency was 1.9 s for both, and cost was $0 (free tier).
 - **Against gemini-3.5-flash:** it could not be measured, so that comparison is still open.
 
 If you want to switch, change `LLM_MODEL` in `backend/.env`. I didn't edit it, because that file holds your secrets.
+
+## Prompt v5 (2026-09-27): more one-click fixes? Not shipped
+**Goal:** offer confident one-click fixes again for easy local cases (v4 had become cautious), without wrong ones.
+
+**What v5 changes** (on top of v4, `system.md` only):
+- **Suggest whenever the fix is local**, with a list of common local fixes: bound parameters, argument lists, rendering as text, a missing `await`, operators and bounds, a sort comparator, a mutable default;
+- **"The suggestion replaces exactly `start_line`..`line`":** every line in the range, nothing outside it;
+- **no diff-view markers**;
+- the v4 correctness rules, kept.
+
+**What changed in the harness first,** so v5 could be judged on its fixes and not just its findings:
+- **wrong-fix denylists for 10 more cases.** Each pattern must match the buggy code and pass at least one correct fix; the path-traversal pattern treats a bare `".." in filename` check as wrong, because an absolute path bypasses it;
+- **new metrics:** "Fixes offered on found bugs" and "Unusable suggestions";
+- **two new held-out cases** that the prompt never mentions: `yaml.load` → `safe_load`, and `indexOf` used as a boolean.
+
+The biggest finding came before any prompt change. Replaying every stored suggestion over its case's code showed that **about 1 in 4, on every prompt version, would break the file when applied**, for example by deleting a `raise` or duplicating a loop body. That was fixed in the engine (#26), where it protects every prompt, and it's now measured (ADR 0013, amendment 2).
+
+**Full dataset** (31 cases), gemini-3.5-flash-lite, with the engine's suggestion checks:
+
+| Run | Prompt | Found | FP | Known-wrong fixes | Fixes offered | Unusable suggestions | Severity exact | Tokens in |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| [10:49](results/20260927T104955Z_v4_gemini-3.5-flash-lite.md) | **v4** | 26/26 | 0 | 0/3 | 6/26 | 2/8 | 81% | 56,825 |
+| [10:46](results/20260927T104653Z_v5_gemini-3.5-flash-lite.md) | v5 | 25/26 | 0 | 0/4 | 8/25 | 3/11 | 76% | 66,714 |
+| [10:53](results/20260927T105344Z_v5_gemini-3.5-flash-lite.md) | v5 | 25/26 | 1 | 0/4 | 8/25 | 4/12 | 72% | 69,100 |
+
+**Held-out set** (4 cases), three runs of each prompt:
+
+| | v4 | v5 |
+| --- | --- | --- |
+| Found | 3/3 every run | 3/3 every run |
+| Fixes offered | 1, 1, 0 of 3 | **2, 2, 2** of 3 |
+| Unusable suggestions | 1/2, 2/3, 2/2 | **1/3, 0/2, 0/2** |
+| False positives | 1 per run (the psycopg 3 control) | the same |
+
+v5's surviving held-out fixes were all correct: `yaml.safe_load(uploaded)` and `user.roles.includes(ADMIN)`. Its SQL-injection fix binds both parameters.
+
+**Why v5 isn't shipped:**
+- **It lost the sqlite blind-spot fix.** v5 missed `py-sqlite-with-leak-01` in both full runs, which is the case v4 was written to catch (5 of 5 in v4's own runs). The leak rule is still in the prompt, so this is most likely dilution: a longer prompt with more emphasis on suggestions.
+- **The exact-range rule didn't work.** Unusable suggestions were 27–33% with v5, against 25% with v4. The model doesn't reliably follow a placement instruction, which is why the engine check (#26) is the real protection.
+- **The rest doesn't add up.** It offers 2 more fixes out of about 25 found bugs, and does better on the held-out set. Against that, severity-exact drops 5–9 points and it uses about 20% more input tokens. It isn't a clear win.
+
+v5 stays in the repo as a measured experiment (`--prompt v5`). v4 remains the default.
+
+**Next time:**
+- Keep v4's detection text as it is, and change **only** the suggestion list. Then measure whether the sqlite miss comes back.
+- Consider a separate, cheaper follow-up call that writes suggestions for comments that don't have one. That keeps detection and fixing apart.
 
 ## How to read these numbers (honestly)
 - **The dataset is at its ceiling for detection.** Every configuration found at least 24 of 25 bugs, so precision and recall barely separate prompts here. The differences show up in severity, category and false-positive quality. The next step is a harder tier: longer diffs with distracting but correct code, and several bugs per case.

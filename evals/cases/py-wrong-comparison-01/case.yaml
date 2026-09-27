@@ -10,3 +10,6 @@ planted_bugs:
   category: bug
   severity: high
   description: '`is` compares identity, not value: admins may be denied'
+  # A suggestion that still contains the bug is a wrong fix (ADR 0013, amendment).
+  bad_suggestions:
+  - "\\bis\\s+(not\\s+)?[\"']"

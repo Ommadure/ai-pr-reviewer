@@ -10,3 +10,6 @@ planted_bugs:
   category: bug
   severity: medium
   description: Default list is shared across calls, so filters leak between requests
+  # A suggestion that still contains the bug is a wrong fix (ADR 0013, amendment).
+  bad_suggestions:
+  - "=\\s*\\[\\]\\s*\\)"
