@@ -50,3 +50,17 @@ Prompt and model changes have to be judged on evidence, not on a few hand-picked
 - This is a denylist. It catches known mistakes, not every bad fix, so a clean result means "none of the known-wrong fixes", not "the fix is correct". Proving a fix correct would mean running it, which is out of scope.
 - Older result files have no suggestions recorded. They load unchanged, and show "-" for the new metric.
 - New case `py-sqlite-with-leak-01` tests the same misconception from the detection side: the code already uses the `with` block, so only a reviewer who knows it doesn't close will flag the leak.
+
+## Amendment 2 (2026-09-27): fixes that don't fit their lines
+**Context.** A GitHub suggestion replaces exactly `start_line..line`. Replaying every stored suggestion over its case's code showed about 1 in 4 (prompts v3–v5) would break the file when applied: the whole function written over its `def` line, a loop and its body over the `for` line, or a fixed `if` over the `if` and the `raise` under it, deleting the `raise`. The text of each fix was right, but where it was applied wasn't, so the known-wrong-fix denylist couldn't see it. Some suggestions also copied the diff view's `+ 16 | ` markers.
+
+**Decision.**
+- The engine drops such suggestions before posting (`validator.clean_suggestion`, `validator.misfit_reason`; #26). The comment still posts.
+- The harness records `suggestion_dropped` per prediction, and reports:
+  - **Fixes offered on found bugs:** found bugs whose comment kept a one-click fix, which is what users actually get;
+  - **Unusable suggestions:** suggestions the model wrote that the validator had to drop.
+- A prompt is judged on both: more fixes offered, fewer unusable, and no known-wrong fixes.
+
+**Consequences.**
+- Placement is now measured for every suggestion, not just the denylisted cases. Correctness still isn't proven: a suggestion that fits its lines can still be logically wrong, which the denylists catch only for known mistakes.
+- Older result files predate the field and show 0 dropped.

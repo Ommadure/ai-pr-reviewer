@@ -10,3 +10,6 @@ planted_bugs:
   category: bug
   severity: high
   description: 'getUser is async: the Promise is always truthy and user.name is undefined'
+  # A suggestion that still contains the bug is a wrong fix (ADR 0013, amendment).
+  bad_suggestions:
+  - "=\\s*getUser\\("

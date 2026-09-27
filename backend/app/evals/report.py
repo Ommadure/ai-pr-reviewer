@@ -31,6 +31,11 @@ def headline_rows(m: Metrics) -> list[tuple[str, str]]:
         ("Severity exact", pct(m.severity_exact)),
         ("Severity within 1 level", pct(m.severity_within_one)),
         ("Known-wrong fixes", f"{m.bad_fixes} / {m.fixes_checked}" if m.fixes_checked else "-"),
+        ("Fixes offered on found bugs", f"{m.fixes_offered} / {m.tp}"),
+        (
+            "Unusable suggestions (dropped)",
+            f"{m.suggestions_dropped} / {m.suggestions_written}" if m.suggestions_written else "-",
+        ),
         ("Cost per case", usd(m.cost_usd_avg)),
         ("Cost, total", usd(m.cost_usd_total)),
         ("Latency p50", secs(m.latency_p50_ms)),
@@ -181,6 +186,10 @@ def _deltas(a: Metrics, b: Metrics) -> dict[str, str]:
         "Severity exact": points(a.severity_exact, b.severity_exact),
         "Severity within 1 level": points(a.severity_within_one, b.severity_within_one),
         "Known-wrong fixes": change(a.bad_fixes, b.bad_fixes, "{:+.0f}"),
+        "Fixes offered on found bugs": change(a.fixes_offered, b.fixes_offered, "{:+.0f}"),
+        "Unusable suggestions (dropped)": change(
+            a.suggestions_dropped, b.suggestions_dropped, "{:+.0f}"
+        ),
         "Cost per case": change(a.cost_usd_avg, b.cost_usd_avg, "{:+.4f}"),
         "Latency p50": change(
             None if a.latency_p50_ms is None else a.latency_p50_ms / 1000,

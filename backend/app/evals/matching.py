@@ -40,6 +40,8 @@ class Prediction:
     title: str
     source: str = "llm"
     suggestion: str | None = None  # the ```suggestion block, scored by bad_suggestions
+    # The model wrote a suggestion the validator had to drop (it wouldn't apply cleanly).
+    suggestion_dropped: bool = False
 
     @classmethod
     def from_comment(cls, comment: ReviewComment) -> "Prediction":
@@ -52,6 +54,7 @@ class Prediction:
             title=comment.title,
             source=comment.source,
             suggestion=comment.suggestion,
+            suggestion_dropped=comment.suggestion_dropped,
         )
 
 

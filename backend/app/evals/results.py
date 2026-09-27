@@ -98,6 +98,11 @@ class Metrics(BaseModel):
     # suggestion, how many suggestions were one of those wrong fixes.
     fixes_checked: int = 0
     bad_fixes: int = 0
+    # One-click fixes: found bugs whose comment kept a suggestion, and suggestions the
+    # validator dropped because applying them would break the code (ADR 0013, amendment 2).
+    fixes_offered: int = 0
+    suggestions_written: int = 0
+    suggestions_dropped: int = 0
     cost_usd_total: float
     cost_usd_avg: float
     latency_p50_ms: int | None
@@ -196,6 +201,11 @@ def compute_metrics(cases: Sequence[CaseResult]) -> Metrics:
         severity_within_one=ratio(sum(g <= 1 for g in gaps), len(gaps)),
         fixes_checked=sum(fixes_checked(c) for c in cases),
         bad_fixes=sum(len(bad_fixes(c)) for c in cases),
+        fixes_offered=sum(1 for c in cases for p, _ in c.matched if c.predictions[p].suggestion),
+        suggestions_written=sum(
+            1 for c in cases for p in c.predictions if p.suggestion or p.suggestion_dropped
+        ),
+        suggestions_dropped=sum(1 for c in cases for p in c.predictions if p.suggestion_dropped),
         cost_usd_total=cost,
         cost_usd_avg=cost / len(cases) if cases else 0.0,
         latency_p50_ms=percentile(latencies, 50),

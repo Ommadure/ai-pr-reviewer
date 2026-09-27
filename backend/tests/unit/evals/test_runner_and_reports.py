@@ -18,13 +18,22 @@ from app.review.pricing import PriceTable
 
 # What the reviewer suggested in production on 2026-09-27: it doesn't close the connection.
 WRONG_SQLITE_FIX = "    with sqlite3.connect(DB_PATH) as conn:"
+SQLITE_LEAK_FILES = {"app/audit/log.py", "app/reports/totals.py"}  # the two cases it applies to
+
+
+# A suggestion carrying a removed diff line: the validator drops it (old code can't apply).
+UNUSABLE_FIX = "-    | old_call()\n+ 9 | new_call()"
 
 
 def oracle(
-    cases: list[EvalCase], *, extra_on_clean: bool = False, wrong_fixes: bool = False
+    cases: list[EvalCase],
+    *,
+    extra_on_clean: bool = False,
+    wrong_fixes: bool = False,
+    unusable_fixes: bool = False,
 ) -> Callable[[list[Message]], str]:
     """A responder that 'finds' each case's planted bugs, and optionally nitpicks clean
-    ones or suggests the known-wrong fix wherever a bug lists bad_suggestions."""
+    ones or suggests the known-wrong sqlite fix on the two sqlite leak cases."""
     by_path = {f.path: c for c in cases for f in c.files}
 
     def respond(messages: list[Message]) -> str:
@@ -39,7 +48,13 @@ def oracle(
                 "category": b.category,
                 "title": b.description[:90],
                 "body": b.description,
-                "suggestion": WRONG_SQLITE_FIX if wrong_fixes and b.bad_suggestions else None,
+                "suggestion": (
+                    WRONG_SQLITE_FIX
+                    if wrong_fixes and b.path in SQLITE_LEAK_FILES
+                    else UNUSABLE_FIX
+                    if unusable_fixes
+                    else None
+                ),
                 "confidence": 0.9,
             }
             for b in case.spec.planted_bugs
@@ -189,3 +204,15 @@ async def test_a_found_bug_with_a_known_wrong_fix_is_reported(cases: list[EvalCa
     comparison = compare_report(good, bad)
     assert "| Known-wrong fixes | - | 2 / 2 | +2 |" in comparison
     assert "| `py-sqlite-with-leak-01` | 1 found, 0 FP | 1 found, 0 FP, 1 wrong fix |" in comparison
+
+
+async def test_suggestions_the_validator_drops_are_counted(cases: list[EvalCase]) -> None:
+    good = await run(cases, FakeLLMProvider(responder=oracle(cases)))
+    bad = await run(cases, FakeLLMProvider(responder=oracle(cases, unusable_fixes=True)))
+
+    m = bad.metrics
+    assert m.recall == 1.0  # a dropped suggestion never costs the finding
+    assert (m.fixes_offered, m.suggestions_dropped, m.suggestions_written) == (0, 26, 26)
+    assert "| Unusable suggestions (dropped) | 26 / 26 |" in run_report(bad)
+    assert "| Fixes offered on found bugs | 0 / 26 |" in run_report(bad)
+    assert "| Unusable suggestions (dropped) | - | 26 / 26 | +26 |" in compare_report(good, bad)

@@ -10,3 +10,7 @@ planted_bugs:
   category: security
   severity: critical
   description: 'Command injection: repoUrl from the request runs in a shell'
+  # A suggestion that still contains the bug is a wrong fix (ADR 0013, amendment).
+  bad_suggestions:
+  - "\\bexec(Sync)?\\(\\s*`[^`]*\\$\\{"
+  - "\\bshell\\s*:\\s*true"

@@ -10,3 +10,6 @@ planted_bugs:
   category: bug
   severity: high
   description: session.commit() is a coroutine and is never awaited, so the cancellation is not saved
+  # A suggestion that still contains the bug is a wrong fix (ADR 0013, amendment).
+  bad_suggestions:
+  - "(?m)^(?!.*\\bawait\\b).*\\bsession\\.commit\\(\\)"

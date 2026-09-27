@@ -11,3 +11,6 @@ planted_bugs:
   severity: high
   description: 'forEach doesn''t await async callbacks: returns before inserts finish, and failures are
     unhandled'
+  # A suggestion that still contains the bug is a wrong fix (ADR 0013, amendment).
+  bad_suggestions:
+  - "\\.forEach\\(\\s*async\\b"
