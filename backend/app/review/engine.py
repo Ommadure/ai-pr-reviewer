@@ -42,7 +42,7 @@ from app.review.pricing import PriceTable
 from app.review.prioritizer import limit_files
 from app.review.redaction import SecretFinding, redact_files
 from app.review.tokens import estimate_tokens
-from app.review.validator import finalize_comments, validate_llm_comments
+from app.review.validator import finalize_comments, still_open, validate_llm_comments
 
 TEMPERATURE = 0.1  # low: we want consistent, conservative reviews, not creativity
 
@@ -169,20 +169,24 @@ async def run_review(
             if file_summary.path in paths:  # ignore summaries of files not in this chunk
                 summaries.setdefault(file_summary.path, []).append(file_summary.summary)
 
+    found = [*secret_comments, *llm_comments]
     comments, rejected = finalize_comments(
-        [*secret_comments, *llm_comments],
-        max_comments=config.max_comments,
-        existing_fingerprints=existing_fingerprints,
+        found, max_comments=config.max_comments, existing_fingerprints=existing_fingerprints
     )
     dropped += rejected
+    reported_before = still_open(found, existing_fingerprints)
 
     # Reduce: one small call turns per-file notes into a PR-level summary.
     summary: PRSummaryOutput | None = None
     if summarize and reviewed_paths:
         file_summaries = [FileSummary(path=p, summary=" ".join(s)) for p, s in summaries.items()]
+        # Issues reported on an earlier commit and still present count for the risk
+        # too: a re-review that only re-finds a SQL injection is not a low-risk PR.
+        earlier = {c.fingerprint for c in reported_before}
         issues = [
             f"[{c.severity}] {c.path}:{c.line} {c.title}"
-            for c in sorted(comments, key=lambda c: -SEVERITY_RANK[c.severity])
+            + (" (reported earlier, still present)" if c.fingerprint in earlier else "")
+            for c in sorted([*comments, *reported_before], key=lambda c: -SEVERITY_RANK[c.severity])
         ]
         messages = prompt_builder.build_summary_messages(
             pr, file_summaries, issues, language=config.summary_language, version=prompt_version
@@ -212,6 +216,7 @@ async def run_review(
         files_total=len(files),
         files_reviewed=len(reviewed_paths),
         errors=errors,
+        still_open=reported_before,
     )
 
 

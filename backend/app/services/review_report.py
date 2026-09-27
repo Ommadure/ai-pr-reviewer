@@ -44,11 +44,21 @@ def conclusion_for(comments: Sequence[ReviewComment]) -> Conclusion:
     return "neutral" if serious else "success"
 
 
-def check_title(comments: Sequence[ReviewComment]) -> str:
-    if not comments:
+def check_title(comments: Sequence[ReviewComment], still_open: Sequence[ReviewComment] = ()) -> str:
+    """New issues first. Issues reported on an earlier commit and still present are
+    counted too: "No issues found" on a PR with an open SQL injection would mislead."""
+    if not comments and not still_open:
         return "No issues found"
-    noun = "issue" if len(comments) == 1 else "issues"
-    return f"{len(comments)} {noun}: {severity_counts(comments)}"
+    if not still_open:
+        return f"{_issues(len(comments))}: {severity_counts(comments)}"
+    earlier = f"{_issues(len(still_open))} reported earlier, still present"
+    if not comments:
+        return f"No new issues · {earlier}: {severity_counts(still_open)}"
+    return f"{len(comments)} new: {severity_counts(comments)} · {len(still_open)} reported earlier"
+
+
+def _issues(n: int) -> str:
+    return f"{n} issue" if n == 1 else f"{n} issues"
 
 
 def summary_markdown(summary: PRSummaryOutput, *, head_sha: str) -> str:
@@ -80,15 +90,18 @@ def review_body(result: ReviewResult, *, config_warnings: Sequence[str] = ()) ->
     """The top-level review text: the PR summary plus anything the reader should know."""
     parts = ["### 🤖 ReviewPilot review"]
     summary = result.summary
+    earlier = _still_open_note(result.still_open)
     if summary:
         parts.append(sanitize_markdown(summary.overview))
-        issues = severity_counts(result.comments) or "none"
+        issues = severity_counts(result.comments) or ("none new" if earlier else "none")
         parts.append(f"**Risk:** {summary.risk_level} · **Issues:** {issues}")
         parts += _summary_lists(summary)
     elif result.comments:
         parts.append(f"**Issues:** {severity_counts(result.comments)}")
-    else:
+    elif not earlier:
         parts.append("No issues found in the reviewed files.")
+    if earlier:
+        parts.append(earlier)
     parts += _skipped_and_warnings(result, config_warnings)
     parts.append(
         f"<sub>ReviewPilot · prompt {result.prompt_version} · {result.model} · "
@@ -111,6 +124,14 @@ def check_run_output(
             f"**Risk:** {result.summary.risk_level}",
         ]
     lines.append(f"**Comments posted:** {posted} of {len(result.comments)}")
+    if result.still_open:
+        lines += ["", _still_open_note(result.still_open)]
+        lines += [
+            f"- {c.severity} · `{c.path}:{c.line}` {sanitize_markdown(c.title)}"
+            for c in result.still_open[:20]
+        ]
+        if len(result.still_open) > 20:
+            lines.append(f"- …and {len(result.still_open) - 20} more")
     if result.comments:
         lines.append("")
         lines.append("| Severity | Count |\n|---|---|")
@@ -130,7 +151,19 @@ def check_run_output(
     if result.errors:
         lines.append("\n**Some parts failed and were skipped:**")
         lines += [f"- {sanitize_markdown(error[:300])}" for error in result.errors[:10]]
-    return CheckRunOutput(title=check_title(result.comments), summary=_truncate("\n".join(lines)))
+    return CheckRunOutput(
+        title=check_title(result.comments, result.still_open),
+        summary=_truncate("\n".join(lines)),
+    )
+
+
+def _still_open_note(still_open: Sequence[ReviewComment]) -> str:
+    if not still_open:
+        return ""
+    return (
+        f"**Reported earlier, still present:** {severity_counts(still_open)}. "
+        "They're on unchanged code, so they weren't posted again; see the earlier comments."
+    )
 
 
 def _skipped_and_warnings(result: ReviewResult, config_warnings: Sequence[str]) -> list[str]:

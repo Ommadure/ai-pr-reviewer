@@ -6,7 +6,7 @@ from app.config.repo_config import RepoConfig
 from app.review.diff_parser import parse_patch
 from app.review.fingerprint import fingerprint
 from app.review.models import FileDiff, LLMComment, ReviewComment
-from app.review.validator import finalize_comments, validate_llm_comments
+from app.review.validator import finalize_comments, still_open, validate_llm_comments
 
 # Two hunks. New-file lines: 10 ctx, 11-12 added, 13 ctx | 40 ctx, 41 added
 PATCH = (
@@ -140,3 +140,15 @@ def test_finalize_dedupes_ranks_and_caps() -> None:
         ("low-1", "over_limit"),
         ("posted-before", "already_posted"),
     ]
+
+
+def test_still_open_keeps_the_best_repeat_of_each_posted_issue() -> None:
+    comments = [
+        _review_comment("posted", "medium", 0.6),
+        _review_comment("posted", "high", 0.9),  # the same issue, found twice: keep the best
+        _review_comment("new", "critical"),
+    ]
+    assert [(c.title, c.severity) for c in still_open(comments, {"posted", "gone"})] == [
+        ("posted", "high")
+    ]
+    assert still_open(comments, ()) == []

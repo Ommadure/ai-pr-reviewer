@@ -118,6 +118,22 @@ def finalize_comments(
     return unique[:max_comments], dropped
 
 
+def still_open(
+    comments: Sequence[ReviewComment], existing_fingerprints: Iterable[str]
+) -> list[ReviewComment]:
+    """The comments that repeat one already posted: one per fingerprint, best first.
+
+    A fingerprint covers the target code, so a match means the same problem on the
+    same code: it wasn't fixed, it was just reported before.
+    """
+    already_posted = set(existing_fingerprints)
+    found: dict[str, ReviewComment] = {}
+    for comment in sorted(comments, key=_rank):
+        if comment.fingerprint in already_posted:
+            found.setdefault(comment.fingerprint, comment)
+    return list(found.values())
+
+
 def _rank(comment: ReviewComment) -> tuple[int, int, float]:
     # Secret-scanner findings first, then severity, then confidence.
     return (

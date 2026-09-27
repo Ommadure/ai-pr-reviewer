@@ -279,7 +279,7 @@ async def _execute_locked(deps: ReviewDeps, run_id: int, *, final_attempt: bool)
             owner,
             name,
             check_run_id,
-            review_report.conclusion_for(result.comments),
+            review_report.conclusion_for([*result.comments, *result.still_open]),
             review_report.check_run_output(
                 result, posted=posted, latency_ms=latency_ms, config_warnings=config_warnings
             ),
@@ -290,6 +290,7 @@ async def _execute_locked(deps: ReviewDeps, run_id: int, *, final_attempt: bool)
         logger.info(
             "review.completed",
             comments=len(result.comments),
+            still_open=len(result.still_open),
             posted=posted,
             cost_usd=result.cost_usd,
             latency_ms=latency_ms,

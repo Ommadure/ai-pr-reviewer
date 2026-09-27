@@ -1,5 +1,6 @@
 """The full review pipeline: real Postgres, mocked GitHub (respx), scripted LLM."""
 
+import json
 from datetime import UTC, datetime, timedelta
 
 import httpx
@@ -108,6 +109,13 @@ async def test_a_new_run_never_reposts_old_comments(
 
     assert (outcome.status, outcome.posted) == ("completed", 0)
     assert github.router["review"].call_count == 1  # nothing new, and post_when_clean is off
+    # ...but the check must not claim the PR is clean: the SQL injection is still there.
+    check = json.loads(github.router["complete_check"].calls.last.request.content)
+    assert check["conclusion"] == "neutral"
+    assert check["output"]["title"] == (
+        "No new issues · 1 issue reported earlier, still present: 1 critical"
+    )
+    assert "`app/users.py:12` SQL injection" in check["output"]["summary"]
     rows = [
         r for r in await all_rows(sessionmaker, ReviewCommentRecord) if r.review_run_id == again.id
     ]

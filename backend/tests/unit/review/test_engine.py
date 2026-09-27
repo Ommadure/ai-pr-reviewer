@@ -189,6 +189,10 @@ async def test_already_posted_comments_are_not_repeated(files: list[FileDiff]) -
     )
     assert second.comments == []
     assert [d.reason for d in second.dropped] == ["already_posted"]
+    # Not reposted, but still present: it still counts, and the summary's risk sees it.
+    assert [c.fingerprint for c in second.still_open] == [posted.fingerprint]
+    summary_prompt = next(call for call in reversed(llm.calls) if _is_summary_call(call))
+    assert "issue at 13 (reported earlier, still present)" in summary_prompt[-1].content
 
 
 async def test_clean_change_produces_no_comments() -> None:
