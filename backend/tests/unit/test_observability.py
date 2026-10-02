@@ -1,7 +1,6 @@
-"""Log context per unit of work, Sentry scrubbing, and the production Redis settings."""
+"""Log context per unit of work and Sentry scrubbing."""
 
 import json
-import ssl
 from collections.abc import Iterator
 from typing import Any
 
@@ -9,14 +8,11 @@ import httpx
 import pytest
 import sentry_sdk
 import structlog
-from structlog.contextvars import get_contextvars
 
 from app.core import logging as app_logging
 from app.core.config import Settings
 from app.core.logging import bind_context, configure_logging, new_context, request_id_from
 from app.core.observability import init_sentry, scrub_event
-from app.workers.celery_app import _clear_task_context, _task_context, celery_app, redis_tls_options
-from app.workers.tasks import review_pull_request
 
 
 @pytest.fixture(autouse=True)
@@ -42,14 +38,6 @@ def test_context_reaches_logs_from_any_module(capsys: pytest.CaptureFixture[str]
     line = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert line | {"request_id": "r1", "delivery_id": "d1", "repo": "octo/app", "pr": 7} == line
     assert "skipped" not in line
-
-
-def test_each_celery_task_starts_with_a_clean_context() -> None:
-    bind_context(run_id=41, repo="leftover/from-last-task")
-    _task_context(task_id="t-1", task=review_pull_request)
-    assert get_contextvars() == {"task": "review_pull_request", "task_id": "t-1"}
-    _clear_task_context()
-    assert get_contextvars() == {}
 
 
 async def test_api_responses_carry_a_request_id(client: httpx.AsyncClient) -> None:
@@ -117,17 +105,3 @@ def test_logged_errors_reach_sentry_only_when_it_is_on(monkeypatch: pytest.Monke
     app_logging.report_logged_errors(None, "error", {"event": "queue down"})
     app_logging.report_logged_errors(None, "info", {"event": "fine"})
     assert captured == [error, "queue down"]
-
-
-def test_rediss_urls_get_verified_tls() -> None:
-    assert redis_tls_options("rediss://default:pw@eu1.upstash.io:6379") == {
-        "ssl_cert_reqs": ssl.CERT_REQUIRED
-    }
-    assert redis_tls_options("redis://localhost:6379/0") is None
-
-
-def test_redis_command_budget_settings() -> None:
-    conf = celery_app.conf
-    assert conf.task_ignore_result is True
-    assert conf.broker_transport_options["polling_interval"] >= 1
-    assert conf.broker_transport_options["health_check_interval"] >= 25

@@ -32,7 +32,7 @@ def access_log() -> Iterator[logging.Logger]:
 
 def test_oauth_codes_never_reach_the_access_log(access_log: logging.Logger) -> None:
     configure_logging("test")
-    configure_logging("test")  # the API and Celery both configure; one filter is enough
+    configure_logging("test")  # configuring twice must not add a second filter
     assert sum(isinstance(f, DropQueryStrings) for f in access_log.filters) == 1
 
     collect = _Collect()

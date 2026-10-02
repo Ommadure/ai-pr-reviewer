@@ -2,8 +2,7 @@
 
 import base64
 import json
-from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -67,22 +66,6 @@ def respond_with(comments: list[dict[str, Any]]) -> Callable[[list[Message]], st
         )
 
     return respond
-
-
-class InMemoryPRLock:
-    def __init__(self) -> None:
-        self.held: set[int] = set()
-
-    @asynccontextmanager
-    async def hold(self, pull_request_id: int) -> AsyncIterator[bool]:
-        if pull_request_id in self.held:
-            yield False
-            return
-        self.held.add(pull_request_id)
-        try:
-            yield True
-        finally:
-            self.held.discard(pull_request_id)
 
 
 class FakeGitHub:
@@ -210,7 +193,6 @@ def make_deps(
         github_auth=auth,
         llm=llm,
         model="fake-model",
-        lock=InMemoryPRLock(),
         **kw,
     )
 

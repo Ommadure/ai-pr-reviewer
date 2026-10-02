@@ -1,144 +1,95 @@
-"""Celery tasks: thin synchronous wrappers around async service code."""
+"""What each job kind does, and the periodic maintenance jobs (ADR 0016)."""
 
-import asyncio
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
-from typing import Any
 
-import httpx
 import structlog
-from celery import Task
 
-from app.core.logging import bind_context
 from app.github.client import GitHubError, GitHubRateLimited
-from app.repositories import deliveries, review_runs
+from app.repositories import deliveries, jobs, review_runs
+from app.repositories.jobs import ClaimedJob
 from app.services.commands import CommandJob, handle_command
 from app.services.feedback import poll_feedback as poll_feedback_service
-from app.services.orchestrator import (
-    RetryableReviewError,
-    ReviewBusy,
-    RunOutcome,
-    execute_review_run,
-)
-from app.workers.celery_app import celery_app
-from app.workers.runtime import worker_context
+from app.services.orchestrator import RetryableReviewError, execute_review_run
+from app.workers.runtime import WorkerContext
 
 log = structlog.get_logger()
 
-LOCK_RETRY_SECONDS = 20
-MAX_LOCK_RETRIES = 30  # ~10 minutes of waiting for an earlier review of the same PR
+REVIEW_MAX_RETRIES = 5
+COMMAND_MAX_RETRIES = 3
 RUNNING_TIMEOUT = timedelta(minutes=15)
 QUEUED_TIMEOUT = timedelta(minutes=30)
-DELIVERY_RETENTION = timedelta(days=30)
+RETENTION = timedelta(days=30)  # webhook deliveries and finished jobs
 
 
-@celery_app.task(name="app.workers.tasks.keep_api_warm")
-def keep_api_warm(url: str) -> int | None:
-    """Ping the API so a free host never puts it to sleep (beat: every 10 min, if set)."""
+class Retry(Exception):
+    """Put the job back in the queue, due in `delay` seconds."""
+
+    def __init__(self, delay: float, reason: str) -> None:
+        super().__init__(reason)
+        self.delay = delay
+
+
+def backoff(attempts: int) -> float:
+    return float(15 * 2**attempts)  # 15 s, 30 s, 60 s, ...
+
+
+async def run_review(ctx: WorkerContext, job: ClaimedJob, wake: Callable[[], None]) -> None:
+    final_attempt = job.attempts >= REVIEW_MAX_RETRIES
     try:
-        response = httpx.get(url, timeout=90)  # a cold start can take about a minute
-    except httpx.HTTPError as exc:
-        log.warning("keep_warm.failed", error=type(exc).__name__)
-        return None  # next tick tries again; no retries needed
-    if response.status_code != 200:
-        log.warning("keep_warm.unhealthy", status=response.status_code)
-    return response.status_code
-
-
-@celery_app.task(name="app.workers.tasks.ping")
-def ping() -> str:
-    return "pong"
-
-
-@celery_app.task(name="app.workers.tasks.review_pull_request", bind=True, max_retries=5)
-def review_pull_request(self: Task, run_id: int) -> str:
-    bind_context(run_id=run_id, attempt=self.request.retries + 1)
-    logger = log
-    final_attempt = self.request.retries >= self.max_retries
-    try:
-        outcome = asyncio.run(_review(run_id, final_attempt=final_attempt))
-    except ReviewBusy as exc:
-        # Another review of this PR is in progress; wait our turn (doesn't use up
-        # the retry budget meant for real failures).
-        logger.info("review.waiting_for_lock")
-        raise self.retry(
-            exc=exc, countdown=LOCK_RETRY_SECONDS, max_retries=MAX_LOCK_RETRIES
-        ) from exc
+        outcome = await execute_review_run(
+            ctx.review_deps(), job.payload["run_id"], final_attempt=final_attempt
+        )
     except RetryableReviewError as exc:
-        countdown = exc.retry_after or 15 * 2**self.request.retries  # 15s, 30s, 60s, ...
-        logger.warning("review.retry_scheduled", countdown=countdown, error=str(exc)[:200])
-        raise self.retry(exc=exc, countdown=countdown) from exc
-    logger.info("review.task_finished", status=outcome.status, reason=outcome.reason)
-    return outcome.status
+        raise Retry(exc.retry_after or backoff(job.attempts), str(exc)) from exc
+    log.info("review.job_finished", status=outcome.status, reason=outcome.reason)
 
 
-async def _review(run_id: int, *, final_attempt: bool) -> RunOutcome:
-    async with worker_context() as ctx:
-        return await execute_review_run(ctx.review_deps(), run_id, final_attempt=final_attempt)
+async def run_command(ctx: WorkerContext, job: ClaimedJob, wake: Callable[[], None]) -> None:
+    command = CommandJob(**job.payload)
+    try:
+        outcome = await handle_command(ctx.command_deps(wake), command)
+    except GitHubError as exc:
+        transient = isinstance(exc, GitHubRateLimited) or exc.status_code >= 500
+        if not transient or job.attempts >= COMMAND_MAX_RETRIES:
+            raise
+        delay = exc.retry_after if isinstance(exc, GitHubRateLimited) else backoff(job.attempts)
+        raise Retry(delay, str(exc)) from exc
+    log.info("command.finished", command=command.command, outcome=outcome, pr=command.pr_number)
 
 
-@celery_app.task(name="app.workers.tasks.mark_stuck_runs")
-def mark_stuck_runs() -> int:
-    """Runs a crashed or hard-killed worker left behind become 'failed' (beat: every 10 min)."""
-    return asyncio.run(_mark_stuck_runs())
+HANDLERS: dict[str, Callable[[WorkerContext, ClaimedJob, Callable[[], None]], Awaitable[None]]] = {
+    jobs.REVIEW: run_review,
+    jobs.COMMAND: run_command,
+}
 
 
-async def _mark_stuck_runs() -> int:
+# ---- periodic ----
+
+
+async def mark_stuck(ctx: WorkerContext, orphaned_after: timedelta) -> None:
+    """Jobs a dead process left 'running' go back to the queue; review runs nothing
+    will ever finish become 'failed'."""
     now = datetime.now(UTC)
-    async with worker_context() as ctx, ctx.sessionmaker() as session:
-        count = await review_runs.fail_stuck_runs(
+    async with ctx.sessionmaker() as session:
+        requeued = await jobs.requeue_orphans(session, started_before=now - orphaned_after)
+        failed = await review_runs.fail_stuck_runs(
             session, started_before=now - RUNNING_TIMEOUT, queued_before=now - QUEUED_TIMEOUT
         )
         await session.commit()
-    if count:
-        log.warning("maintenance.stuck_runs_failed", count=count)
-    return count
+    if requeued or failed:
+        log.warning("maintenance.stuck", jobs_requeued=requeued, runs_failed=failed)
 
 
-@celery_app.task(name="app.workers.tasks.cleanup_webhook_deliveries")
-def cleanup_webhook_deliveries() -> int:
-    """Delete webhook_deliveries older than 30 days (beat: daily)."""
-    return asyncio.run(_cleanup_webhook_deliveries())
-
-
-async def _cleanup_webhook_deliveries() -> int:
-    cutoff = datetime.now(UTC) - DELIVERY_RETENTION
-    async with worker_context() as ctx, ctx.sessionmaker() as session:
-        count = await deliveries.delete_received_before(session, cutoff)
+async def cleanup(ctx: WorkerContext) -> None:
+    cutoff = datetime.now(UTC) - RETENTION
+    async with ctx.sessionmaker() as session:
+        deleted_deliveries = await deliveries.delete_received_before(session, cutoff)
+        deleted_jobs = await jobs.delete_finished_before(session, cutoff)
         await session.commit()
-    log.info("maintenance.deliveries_deleted", count=count)
-    return count
+    log.info("maintenance.cleanup", deliveries=deleted_deliveries, jobs=deleted_jobs)
 
 
-@celery_app.task(name="app.workers.tasks.handle_pr_command", bind=True, max_retries=3)
-def handle_pr_command(self: Task, job: dict[str, Any]) -> str:
-    command = CommandJob(**job)
-    try:
-        outcome = asyncio.run(_handle_command(command))
-    except GitHubRateLimited as exc:
-        raise self.retry(exc=exc, countdown=exc.retry_after) from exc
-    except GitHubError as exc:
-        if exc.status_code < 500:
-            raise
-        raise self.retry(exc=exc, countdown=15 * 2**self.request.retries) from exc
-    log.info("command.finished", command=command.command, outcome=outcome, pr=command.pr_number)
-    return outcome
-
-
-async def _handle_command(job: CommandJob) -> str:
-    async with worker_context() as ctx:
-        deps = ctx.command_deps(enqueue_review=lambda run_id: review_pull_request.delay(run_id))
-        return await handle_command(deps, job)
-
-
-@celery_app.task(name="app.workers.tasks.poll_feedback")
-def poll_feedback() -> int:
-    """Refresh 👍/👎 counts on posted comments (beat: every 30 min)."""
-    return asyncio.run(_poll_feedback())
-
-
-async def _poll_feedback() -> int:
-    async with worker_context() as ctx:
-        result = await poll_feedback_service(
-            ctx.sessionmaker, ctx.github_auth, now=datetime.now(UTC)
-        )
-    return result.checked
+async def poll_feedback(ctx: WorkerContext) -> None:
+    """Refresh 👍/👎 counts on posted comments."""
+    await poll_feedback_service(ctx.sessionmaker, ctx.github_auth, now=datetime.now(UTC))

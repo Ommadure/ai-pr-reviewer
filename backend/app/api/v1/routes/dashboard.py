@@ -6,13 +6,11 @@ Anything outside the caller's installations is a 404, exactly like a missing id.
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.concurrency import run_in_threadpool
+from fastapi import APIRouter, HTTPException, Query, Request, status
 
-from app.api.deps import ScopeDep, SessionDep, SettingsDep, get_rate_limiter
-from app.core.rate_limit import RateLimiter, manual_review_key
+from app.api.deps import ScopeDep, SessionDep, SettingsDep, wake_worker
 from app.models import LLMCall, PullRequest, ReviewCommentRecord, ReviewRun
-from app.repositories import dashboard, review_runs
+from app.repositories import dashboard, jobs, review_runs
 from app.schemas.dashboard import (
     AnalyticsOverview,
     CommentOut,
@@ -36,8 +34,6 @@ from app.schemas.dashboard import (
 )
 from app.services import analytics
 from app.services.commands import MANUAL_REVIEWS_PER_HOUR
-from app.services.dispatch import ReviewDispatcher, get_review_dispatcher
-from app.services.webhook_router import ReviewJob
 
 router = APIRouter(tags=["dashboard"])
 
@@ -171,10 +167,9 @@ async def get_pull(pull_request_id: int, scope: ScopeDep, session: SessionDep) -
 @router.post("/pulls/{pull_request_id}/rereview", status_code=status.HTTP_202_ACCEPTED)
 async def rereview(
     pull_request_id: int,
+    request: Request,
     scope: ScopeDep,
     session: SessionDep,
-    limiter: Annotated[RateLimiter, Depends(get_rate_limiter)],
-    dispatcher: Annotated[ReviewDispatcher, Depends(get_review_dispatcher)],
 ) -> RereviewResponse:
     pr = await dashboard.pull(session, scope.installation_ids, pull_request_id)
     if pr is None:
@@ -182,9 +177,7 @@ async def rereview(
     if pr.state != "open":
         raise HTTPException(status.HTTP_409_CONFLICT, "Only open pull requests can be reviewed")
     # Same budget as `/reviewpilot review`: each manual review costs LLM calls.
-    if not await limiter.hit(
-        manual_review_key(pr.id), limit=MANUAL_REVIEWS_PER_HOUR, window_seconds=3600
-    ):
+    if await review_runs.manual_runs_last_hour(session, pr.id) >= MANUAL_REVIEWS_PER_HOUR:
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
             f"At most {MANUAL_REVIEWS_PER_HOUR} manual reviews per pull request per hour",
@@ -197,8 +190,9 @@ async def rereview(
         base_sha=pr.base_sha,
         head_sha=pr.head_sha,
     )
+    jobs.enqueue_review(session, run_id=run.id, pull_request_id=pr.id)
     await session.commit()
-    await run_in_threadpool(dispatcher.enqueue_review, ReviewJob(run.id))
+    wake_worker(request)
     return RereviewResponse(run_id=run.id)
 
 

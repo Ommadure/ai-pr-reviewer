@@ -3,7 +3,7 @@
 /health answers "is the process alive?" and never touches dependencies, so a
 database outage doesn't make the platform restart a healthy process in a loop.
 /ready answers "can this instance do useful work right now?" by checking
-Postgres and Redis (Redis is also the Celery broker).
+Postgres (also the job queue, ADR 0016).
 """
 
 import asyncio
@@ -15,7 +15,6 @@ import structlog
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy import text
 
-from app.core.redis import get_redis
 from app.db.session import get_engine
 
 router = APIRouter(tags=["health"])
@@ -34,13 +33,9 @@ async def check_database() -> None:
         await conn.execute(text("SELECT 1"))
 
 
-async def check_redis() -> None:
-    await get_redis().ping()
-
-
 def get_readiness_checks() -> dict[str, ReadinessCheck]:
-    """Dependency so tests can swap in fakes instead of real Postgres/Redis."""
-    return {"database": check_database, "redis": check_redis}
+    """Dependency so tests can swap in fakes instead of a real Postgres."""
+    return {"database": check_database}
 
 
 @router.get("/health")

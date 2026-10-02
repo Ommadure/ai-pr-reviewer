@@ -1,6 +1,6 @@
 # ADR 0002: Process reviews on a job queue, not inside the webhook request
 
-- **Status:** Accepted
+- **Status:** Accepted. The Celery and Redis implementation is superseded by [ADR 0016](0016-postgres-job-queue-in-process-worker.md); the decision to queue stands.
 - **Date:** 2026-09-24
 
 ## Context

@@ -12,9 +12,10 @@ from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging, new_context, request_id_from
 from app.core.observability import init_sentry
-from app.core.redis import get_redis
 from app.db.session import get_engine
 from app.github.client import create_http_client
+from app.workers.runtime import worker_context
+from app.workers.worker import Worker
 
 log = structlog.get_logger()
 
@@ -22,12 +23,18 @@ log = structlog.get_logger()
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     log.info("api.startup", app_env=get_settings().app_env)
-    yield
+    # The background worker lives in this process, on this event loop (ADR 0016).
+    async with worker_context() as ctx:
+        app.state.worker = worker = Worker(ctx)
+        worker.start()
+        try:
+            yield
+        finally:
+            await worker.stop()
     # Close pooled connections cleanly so shutdown doesn't leave sockets open.
     await app.state.github_web_http.aclose()
     await app.state.github_api_http.aclose()
     await get_engine().dispose()
-    await get_redis().aclose()
     log.info("api.shutdown")
 
 

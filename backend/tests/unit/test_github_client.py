@@ -1,5 +1,4 @@
 import json
-import pickle
 
 import httpx
 import pytest
@@ -112,7 +111,7 @@ async def test_primary_rate_limit_raises_with_time_until_reset(
     with pytest.raises(GitHubRateLimited) as exc_info:
         await client.request("GET", "/x")
     assert exc_info.value.retry_after == 600
-    assert sleep.calls == []  # too long to wait inline: the Celery task retries later
+    assert sleep.calls == []  # too long to wait inline: the job retries later
 
 
 @respx.mock(base_url=GITHUB_API_URL)
@@ -184,21 +183,3 @@ async def test_create_review_always_uses_comment_event(
         # Unset optional fields (start_line, start_side) are left out, not sent as null.
         "comments": [{"path": "app.py", "line": 3, "side": "RIGHT", "body": "hi"}],
     }
-
-
-def test_errors_survive_pickling_for_celery() -> None:
-    # Celery pickles task exceptions; a lossy round-trip hides the real error.
-    error = GitHubRateLimited(403, "rate limited", "ABCD:1", retry_after=42.0)
-    restored = pickle.loads(pickle.dumps(error))  # noqa: S301 (our own object)
-    assert isinstance(restored, GitHubRateLimited)
-    assert (restored.status_code, restored.request_id, restored.retry_after) == (
-        403,
-        "ABCD:1",
-        42.0,
-    )
-    plain = pickle.loads(pickle.dumps(GitHubError(404, "Not Found", None)))  # noqa: S301
-    assert (type(plain), plain.status_code, str(plain)) == (
-        GitHubError,
-        404,
-        "GitHub API 404: Not Found (request id None)",
-    )

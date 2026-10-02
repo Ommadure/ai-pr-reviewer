@@ -26,7 +26,7 @@ jobs:
       run:
         working-directory: backend
     env:
-      APP_ENV: test # the eval needs no database, Redis or GitHub settings
+      APP_ENV: test # the eval needs no database or GitHub settings
       LLM_PROVIDER: gemini
       LLM_MODEL: ${{ vars.LLM_MODEL }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}

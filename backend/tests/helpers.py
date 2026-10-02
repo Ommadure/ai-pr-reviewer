@@ -7,10 +7,11 @@ from typing import Any
 from uuid import uuid4
 
 import httpx
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.github.signatures import compute_signature
-from app.services.commands import CommandJob
-from app.services.webhook_router import ReviewJob
+from app.models import Job
 
 FIXTURES = Path(__file__).parent / "fixtures"
 WEBHOOK_SECRET = "test-webhook-secret"
@@ -47,22 +48,15 @@ async def send_webhook(
     return await client.post("/api/v1/webhooks/github", content=body, headers=headers)
 
 
-class RecordingDispatcher:
-    """Stands in for Celery: remembers what would have been enqueued."""
-
-    def __init__(self) -> None:
-        self.jobs: list[ReviewJob] = []
-        self.commands: list[CommandJob] = []
-
-    def enqueue_review(self, job: ReviewJob) -> None:
-        self.jobs.append(job)
-
-    def enqueue_command(self, job: CommandJob) -> None:
-        self.commands.append(job)
+async def queued_jobs(sessionmaker: async_sessionmaker[AsyncSession], kind: str) -> list[Job]:
+    """What the worker would pick up next: jobs rows of one kind, oldest first."""
+    async with sessionmaker() as session:
+        result = await session.scalars(select(Job).where(Job.kind == kind).order_by(Job.id))
+        return list(result)
 
 
 class InMemoryTokenCache:
-    """Stands in for Redis in token-cache tests; records TTLs for assertions."""
+    """Stands in for MemoryTokenCache in token-cache tests; records TTLs for assertions."""
 
     def __init__(self) -> None:
         self.values: dict[str, str] = {}

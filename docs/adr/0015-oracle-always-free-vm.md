@@ -1,6 +1,6 @@
 # ADR 0015: Run the backend on an Oracle Cloud Always Free VM
 
-- **Status:** Accepted. It supersedes the Render compute part of [ADR 0014](0014-deployment-topology.md); Neon, Upstash, Vercel and the Redis budget stay.
+- **Status:** Accepted. It supersedes the Render compute part of [ADR 0014](0014-deployment-topology.md); Neon, Upstash, Vercel and the Redis budget stay. Upstash and the separate worker container were later removed by [ADR 0016](0016-postgres-job-queue-in-process-worker.md).
 - **Date:** 2026-09-26
 
 ## Context

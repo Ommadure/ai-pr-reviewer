@@ -6,32 +6,27 @@ from sqlalchemy import delete, update
 from app.github.app_auth import GitHubAppAuth
 from app.models import PullRequest, ReviewRun
 from app.services.commands import CommandDeps, CommandJob, handle_command
+from tests.helpers import queued_jobs
 from tests.integration.review_fakes import FakeGitHub, Sessions, all_rows
 
 
-class CountingRateLimiter:
-    def __init__(self) -> None:
-        self.counts: dict[str, int] = {}
-
-    async def hit(self, key: str, *, limit: int, window_seconds: int) -> bool:
-        self.counts[key] = self.counts.get(key, 0) + 1
-        return self.counts[key] <= limit
-
-
 @pytest.fixture
-def enqueued() -> list[int]:
+def wakes() -> list[None]:
     return []
 
 
 @pytest.fixture
-def deps(sessionmaker: Sessions, github_auth: GitHubAppAuth, enqueued: list[int]) -> CommandDeps:
+def deps(sessionmaker: Sessions, github_auth: GitHubAppAuth, wakes: list[None]) -> CommandDeps:
     return CommandDeps(
         sessionmaker=sessionmaker,
         github_auth=github_auth,
-        rate_limiter=CountingRateLimiter(),
-        enqueue_review=enqueued.append,
+        wake_worker=lambda: wakes.append(None),
         docs_url="https://example.test/docs",
     )
+
+
+async def _queued_run_ids(sessionmaker: Sessions) -> list[int]:
+    return [job.payload["run_id"] for job in await queued_jobs(sessionmaker, "review")]
 
 
 def _job(command: str, *, repository_id: int = 1, author: str = "octocat") -> CommandJob:
@@ -47,7 +42,7 @@ def _job(command: str, *, repository_id: int = 1, author: str = "octocat") -> Co
 
 
 async def test_review_command_queues_a_full_review(
-    deps: CommandDeps, github: FakeGitHub, run_id: int, enqueued: list[int], sessionmaker: Sessions
+    deps: CommandDeps, github: FakeGitHub, run_id: int, wakes: list[None], sessionmaker: Sessions
 ) -> None:
     outcome = await handle_command(deps, _job("review"))
 
@@ -56,7 +51,8 @@ async def test_review_command_queues_a_full_review(
     runs = await all_rows(sessionmaker, ReviewRun)
     new = runs[-1]
     assert (new.trigger, new.mode, new.status) == ("command", "full", "queued")
-    assert enqueued == [new.id]
+    assert await _queued_run_ids(sessionmaker) == [new.id]
+    assert len(wakes) == 1  # the worker starts it now, not on a poll
     assert github.replies == ["🔍 Starting a full review of `aaaaaaa`."]
 
 
@@ -71,7 +67,6 @@ async def test_review_command_on_a_closed_pr_says_so_and_queues_nothing(
     deps: CommandDeps,
     github: FakeGitHub,
     run_id: int,
-    enqueued: list[int],
     sessionmaker: Sessions,
     merged: bool,
     message: str,
@@ -80,14 +75,14 @@ async def test_review_command_on_a_closed_pr_says_so_and_queues_nothing(
 
     assert await handle_command(deps, _job("review")) == "pr_closed"
     assert github.replies == [message]
-    assert enqueued == [] and len(await all_rows(sessionmaker, ReviewRun)) == 1
-    assert deps.rate_limiter.counts == {}  # type: ignore[attr-defined]  # quota untouched
+    assert await _queued_run_ids(sessionmaker) == []
+    assert len(await all_rows(sessionmaker, ReviewRun)) == 1  # quota untouched
     [pr] = await all_rows(sessionmaker, PullRequest)
     assert pr.state == ("merged" if merged else "closed")  # our copy is refreshed too
 
 
 async def test_review_command_uses_the_live_pr_not_our_copy(
-    deps: CommandDeps, github: FakeGitHub, run_id: int, enqueued: list[int], sessionmaker: Sessions
+    deps: CommandDeps, github: FakeGitHub, run_id: int, sessionmaker: Sessions
 ) -> None:
     # A missed webhook left us thinking the PR is merged, on an old head.
     async with sessionmaker() as session:
@@ -101,21 +96,21 @@ async def test_review_command_uses_the_live_pr_not_our_copy(
 
 
 async def test_privileged_commands_need_write_access(
-    deps: CommandDeps, github: FakeGitHub, run_id: int, enqueued: list[int]
+    deps: CommandDeps, github: FakeGitHub, run_id: int, sessionmaker: Sessions
 ) -> None:
     github.role = "read"
     assert await handle_command(deps, _job("review", author="drive-by")) == "forbidden"
-    assert enqueued == []
+    assert await _queued_run_ids(sessionmaker) == []
     assert "write access" in github.replies[0]
     assert "@" not in github.replies[0]  # the bot never pings anyone
 
 
 async def test_manual_reviews_are_rate_limited(
-    deps: CommandDeps, github: FakeGitHub, run_id: int, enqueued: list[int]
+    deps: CommandDeps, github: FakeGitHub, run_id: int, sessionmaker: Sessions
 ) -> None:
     outcomes = [await handle_command(deps, _job("review")) for _ in range(6)]
     assert outcomes == ["review_queued"] * 5 + ["rate_limited"]
-    assert len(enqueued) == 5
+    assert len(await _queued_run_ids(sessionmaker)) == 5
 
 
 async def test_pause_and_resume(

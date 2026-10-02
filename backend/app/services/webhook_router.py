@@ -1,18 +1,25 @@
 """Decide what each webhook event means for us.
 
-Only fast DB work happens here (upserts). Anything slow becomes a ReviewJob
-that the API enqueues after the transaction commits.
+Only fast DB work happens here (upserts). Anything slow becomes a row in the jobs
+table, in the same transaction, for the worker to pick up (ADR 0016).
 """
 
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.github import events
-from app.repositories import installations, pull_requests, repo_configs, repos, review_runs
+from app.repositories import (
+    installations,
+    jobs,
+    pull_requests,
+    repo_configs,
+    repos,
+    review_runs,
+)
 from app.services.commands import CommandJob, parse_command
 from app.services.installations import ensure_repository, sync_installation
 
@@ -20,18 +27,10 @@ DeliveryStatus = Literal["processed", "queued", "ignored"]
 REVIEW_TRIGGER_ACTIONS = {"opened", "reopened", "ready_for_review", "synchronize"}
 
 
-@dataclass(frozen=True)
-class ReviewJob:
-    """What the worker needs: the id of a review_runs row created in 'queued' state."""
-
-    run_id: int
-
-
 @dataclass
 class RouteOutcome:
     status: DeliveryStatus
     ignore_reason: str | None = None
-    jobs: list[ReviewJob | CommandJob] = field(default_factory=list)
 
 
 def processed() -> RouteOutcome:
@@ -139,7 +138,8 @@ async def handle_pull_request(session: AsyncSession, payload: dict[str, Any]) ->
         base_sha=pr.base_sha,
         head_sha=pr.head_sha,
     )
-    return RouteOutcome("queued", jobs=[ReviewJob(run.id)])
+    jobs.enqueue_review(session, run_id=run.id, pull_request_id=pr.id)
+    return RouteOutcome("queued")
 
 
 async def _drafts_allowed(session: AsyncSession, repository_id: int) -> bool:
@@ -173,7 +173,8 @@ async def handle_issue_comment(session: AsyncSession, payload: dict[str, Any]) -
         author=event.comment.user.login,
         command=command,
     )
-    return RouteOutcome("queued", jobs=[job])
+    jobs.enqueue_command(session, job.to_dict())
+    return RouteOutcome("queued")
 
 
 HANDLERS: dict[str, Handler] = {

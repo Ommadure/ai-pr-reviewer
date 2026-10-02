@@ -22,12 +22,11 @@ from sqlalchemy import func, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.logging import bind_context
-from app.core.rate_limit import RateLimiter, manual_review_key
 from app.github import events
 from app.github.app_auth import GitHubAppAuth
 from app.github.client import GitHubClient, GitHubError
 from app.models import PullRequest
-from app.repositories import pull_requests, review_runs
+from app.repositories import jobs, pull_requests, review_runs
 from app.review.models import PRSummaryOutput
 from app.services import review_report
 
@@ -67,8 +66,7 @@ class CommandJob:
 class CommandDeps:
     sessionmaker: async_sessionmaker[AsyncSession]
     github_auth: GitHubAppAuth
-    rate_limiter: RateLimiter
-    enqueue_review: Callable[[int], None]
+    wake_worker: Callable[[], None] = lambda: None  # a queued job starts now, not on a poll
     docs_url: str = ""
 
 
@@ -136,16 +134,15 @@ async def handle_command(deps: CommandDeps, job: CommandJob) -> str:
                     else "This PR is closed. Reopen it, then run `/reviewpilot review` again."
                 )
                 return "pr_closed"
-            allowed = await deps.rate_limiter.hit(
-                manual_review_key(pr.id), limit=MANUAL_REVIEWS_PER_HOUR, window_seconds=3600
-            )
-            if not allowed:
-                await reply(
-                    f"This PR has had {MANUAL_REVIEWS_PER_HOUR} manual reviews in the last hour. "
-                    "Please try again later."
-                )
-                return "rate_limited"
             async with deps.sessionmaker() as session:
+                if await review_runs.manual_runs_last_hour(session, pr.id) >= (
+                    MANUAL_REVIEWS_PER_HOUR
+                ):
+                    await reply(
+                        f"This PR has had {MANUAL_REVIEWS_PER_HOUR} manual reviews in the last "
+                        "hour. Please try again later."
+                    )
+                    return "rate_limited"
                 run = await review_runs.create_queued(
                     session,
                     pull_request_id=pr.id,
@@ -154,8 +151,9 @@ async def handle_command(deps: CommandDeps, job: CommandJob) -> str:
                     base_sha=pr.base_sha,
                     head_sha=pr.head_sha,
                 )
+                jobs.enqueue_review(session, run_id=run.id, pull_request_id=pr.id)
                 await session.commit()
-            deps.enqueue_review(run.id)
+            deps.wake_worker()
             await reply(f"🔍 Starting a full review of `{pr.head_sha[:7]}`.")
             return "review_queued"
         case "summary":

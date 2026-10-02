@@ -1,4 +1,4 @@
-# One image runs api, worker, and beat; only the command differs (see docker-compose.yml).
+# One image, one process: the API with its in-process background worker (ADR 0016).
 
 # ---- build stage: resolve and install dependencies with uv ----
 FROM python:3.12-slim-bookworm AS builder

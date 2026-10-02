@@ -13,17 +13,15 @@ from app.repositories import review_runs
 from app.review.llm.base import Completion, LLMError, Message
 from app.review.llm.fake import FakeLLMProvider
 from app.review.prompt_builder import DEFAULT_PROMPT_VERSION
+from app.services import orchestrator
 from app.services.orchestrator import (
     RetryableReviewError,
-    ReviewBusy,
-    ReviewDeps,
     execute_review_run,
 )
 from tests.integration.review_fakes import (
     BASE,
     HEAD,
     FakeGitHub,
-    InMemoryPRLock,
     Sessions,
     all_rows,
     get_run,
@@ -86,7 +84,7 @@ async def test_running_the_same_task_twice_posts_once(
         sessionmaker, github_auth, review_responder([llm_comment(12, "SQL injection")])
     )
     await execute_review_run(deps, run_id)
-    second = await execute_review_run(deps, run_id)  # e.g. Celery redelivery (acks_late)
+    second = await execute_review_run(deps, run_id)  # e.g. a job requeued after a crash
 
     assert (second.status, second.reason) == ("completed", "already_finished")
     assert github.router["review"].call_count == 1
@@ -292,21 +290,21 @@ async def test_rate_limit_requeues_the_run_until_the_last_attempt(
     ] * 2
 
 
-async def test_busy_pr_raises_so_the_task_waits(
-    sessionmaker: Sessions, github_auth: GitHubAppAuth, github: FakeGitHub, run_id: int
+async def test_a_review_past_its_time_limit_fails_as_timeout(
+    sessionmaker: Sessions,
+    github_auth: GitHubAppAuth,
+    github: FakeGitHub,
+    run_id: int,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    lock = InMemoryPRLock()
-    lock.held.add(1)
-    deps = ReviewDeps(
-        sessionmaker=sessionmaker,
-        github_auth=github_auth,
-        llm=review_responder([]),
-        model="fake-model",
-        lock=lock,
-    )
-    with pytest.raises(ReviewBusy):
-        await execute_review_run(deps, run_id)
-    assert (await get_run(sessionmaker, run_id)).status == "queued"
+    monkeypatch.setattr(orchestrator, "REVIEW_TIME_LIMIT_SECONDS", 0)
+    deps = make_deps(sessionmaker, github_auth, review_responder([]))
+
+    outcome = await execute_review_run(deps, run_id)
+
+    assert outcome.status == "failed"
+    run = await get_run(sessionmaker, run_id)
+    assert (run.status, run.error_code) == ("failed", "timeout")
 
 
 async def test_stuck_runs_are_failed(sessionmaker: Sessions, run_id: int) -> None:

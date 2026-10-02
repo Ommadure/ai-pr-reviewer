@@ -1,22 +1,8 @@
 # Local development stack: `docker compose up --build`
 #   api     http://localhost:8000/api/v1/health   (docs at /docs)
-#   flower  http://localhost:5555
-# Secrets come from backend/.env (optional in Phase 0); the service URLs below
-# override the localhost values in that file so containers reach each other.
-
-x-backend: &backend
-  build: ./backend
-  env_file:
-    - path: ./backend/.env
-      required: false
-  environment:
-    DATABASE_URL: postgresql+asyncpg://reviewpilot:reviewpilot@postgres:5432/reviewpilot
-    REDIS_URL: redis://redis:6379/0
-  depends_on:
-    postgres:
-      condition: service_healthy
-    redis:
-      condition: service_healthy
+# The API runs the background worker in-process, with Postgres as the job queue (ADR 0016).
+# Secrets come from backend/.env (optional in Phase 0); DATABASE_URL below overrides the
+# localhost value in that file so the container reaches Postgres.
 
 services:
   postgres:
@@ -37,18 +23,16 @@ services:
       timeout: 3s
       retries: 10
 
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
   api:
-    <<: *backend
+    build: ./backend
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+asyncpg://reviewpilot:reviewpilot@postgres:5432/reviewpilot
+    depends_on:
+      postgres:
+        condition: service_healthy
     # Apply migrations, then serve with auto-reload on source changes.
     command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     ports:
@@ -62,28 +46,6 @@ services:
       timeout: 3s
       retries: 5
       start_period: 10s
-
-  worker:
-    <<: *backend
-    command: celery -A app.workers.celery_app:celery_app worker -Q reviews,default,feedback --concurrency=2 --loglevel=INFO
-    volumes:
-      - ./backend/app:/app/app
-
-  # Exactly ONE beat instance, ever; two would run every scheduled job twice.
-  beat:
-    <<: *backend
-    command: celery -A app.workers.celery_app:celery_app beat --loglevel=INFO --schedule=/tmp/celerybeat-schedule
-
-  flower:
-    # Official Flower image: it only needs the broker URL, so it doesn't need our code.
-    image: mher/flower:2.0
-    environment:
-      CELERY_BROKER_URL: redis://redis:6379/0
-    ports:
-      - "5555:5555"
-    depends_on:
-      redis:
-        condition: service_healthy
 
 volumes:
   postgres-data:

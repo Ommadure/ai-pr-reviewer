@@ -11,10 +11,6 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.36",
     "asyncpg>=0.30",
     "alembic>=1.14",
-    "celery[redis]>=5.4",
-    # <7: redis 8 forces kombu (Celery's broker layer) onto a 5.7 alpha. Lift once
-    # a stable kombu supports it.
-    "redis>=5.2,<7",
     "structlog>=24.4",
     "httpx>=0.28",
     "pyjwt[crypto]>=2.10",
@@ -52,13 +48,6 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM", "ASYNC", "S", "RUF"]
 python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
-
-[[tool.mypy.overrides]]
-# Celery ships without type hints; its task decorator would otherwise
-# make every task "untyped" under strict mode.
-module = ["celery", "celery.*", "app.workers.*"]
-ignore_missing_imports = true
-disallow_untyped_decorators = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -19,11 +19,12 @@ chmod 600 "$ENV_FILE" # secrets: readable by this user only
 ln -sfn .env.production deploy/oracle/.env
 
 git pull --ff-only
+# --remove-orphans also removes containers no longer defined (the old Celery worker).
 "${COMPOSE[@]}" up -d --build --remove-orphans
 docker image prune -f >/dev/null # old image layers would slowly fill the disk
 
 echo
 "${COMPOSE[@]}" ps
 echo
-echo "Logs:   docker compose -f deploy/oracle/compose.yaml logs -f api worker"
+echo "Logs:   docker compose -f deploy/oracle/compose.yaml logs -f api"
 echo "Health: curl -s https://\$(grep ^API_DOMAIN= $ENV_FILE | cut -d= -f2)/api/v1/ready"

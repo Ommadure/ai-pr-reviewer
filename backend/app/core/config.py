@@ -18,11 +18,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 AppEnv = Literal["development", "test", "production"]
 LLMProviderName = Literal["gemini", "anthropic", "openai", "openai_compatible", "fake"]
 
-# Settings the *server* (api/worker/beat) needs outside of tests. The LLM settings
-# are checked separately below.
+# Settings the server (the API and its in-process worker) needs outside of tests.
+# The LLM settings are checked separately below.
 REQUIRED_OUTSIDE_TESTS: tuple[str, ...] = (
     "database_url",
-    "redis_url",
     "github_app_private_key_b64",
     # An empty webhook secret would make every forged webhook "valid".
     "github_webhook_secret",
@@ -72,13 +71,12 @@ class ReviewSettings(BaseSettings):
 
 
 class Settings(ReviewSettings):
-    """Everything the server processes (api, worker, beat) need."""
+    """Everything the server (the API and its in-process worker) needs."""
 
     app_env: AppEnv = "development"
     app_base_url: str = "http://localhost:8000"
     frontend_url: str = "http://localhost:5173"
     database_url: str = ""
-    redis_url: str = ""
 
     github_app_id: str = ""
     github_app_client_id: str = ""
@@ -95,14 +93,6 @@ class Settings(ReviewSettings):
 
     sentry_dsn: str = ""  # empty: Sentry off
     sentry_traces_sample_rate: float = Field(default=0.0, ge=0, le=1)
-
-    # Redis command budget. An idle worker's queue poll (BRPOP) and its Flower
-    # events are most of its Redis traffic; per-command hosts (Upstash) bill that.
-    # BRPOP returns as soon as a task arrives, so a longer poll adds no latency.
-    celery_poll_seconds: int = Field(default=1, ge=1, le=60)
-    celery_task_events: bool = True  # live task events for Flower; off in production
-    # Health URL of an API that sleeps when idle (Render free); the worker pings it.
-    keep_warm_url: str = ""
 
     # Linked from `/reviewpilot help` replies.
     docs_url: str = "https://github.com/Ommadure/ai-pr-reviewer#configuration"

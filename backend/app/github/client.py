@@ -41,11 +41,6 @@ class GitHubError(Exception):
         self.message = message
         self.request_id = request_id
 
-    def __reduce__(self) -> tuple[Any, ...]:
-        # Celery pickles exceptions to store/report them. The default pickling
-        # replays self.args (one string) into __init__, which needs three.
-        return (type(self), (self.status_code, self.message, self.request_id))
-
     @classmethod
     def from_response(cls, response: httpx.Response) -> "GitHubError":
         status_code, message, request_id = _error_details(response)
@@ -55,7 +50,7 @@ class GitHubError(Exception):
 class GitHubRateLimited(GitHubError):
     """Raised when we must wait longer than is reasonable inside one request.
 
-    The Celery task catches it and retries after `retry_after` seconds.
+    The job catches it and retries after `retry_after` seconds.
     """
 
     def __init__(
@@ -63,12 +58,6 @@ class GitHubRateLimited(GitHubError):
     ) -> None:
         super().__init__(status_code, message, request_id)
         self.retry_after = retry_after
-
-    def __reduce__(self) -> tuple[Any, ...]:
-        return (
-            type(self),
-            (self.status_code, self.message, self.request_id, self.retry_after),
-        )
 
 
 def _error_details(response: httpx.Response) -> tuple[int, str, str | None]:
